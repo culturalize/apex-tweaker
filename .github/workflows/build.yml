@@ -1,0 +1,67 @@
+name: Build & Package Apex Tweaker
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile PCTweaker.exe
+        shell: cmd
+        run: call build.bat
+
+      - name: Verify Headless Hardware & 36-Tweak Live Audit (--audit)
+        shell: pwsh
+        run: |
+          Start-Process -FilePath ".\PCTweaker.exe" -ArgumentList "--audit" -Wait -NoNewWindow
+          if (-not (Test-Path ".\latest-audit-report.txt")) {
+            Write-Error "Audit report was not generated."
+            exit 1
+          }
+          Write-Host "Audit smoke test passed."
+
+      - name: Package Release Assets (EXE + ZIP + SHA256SUMS)
+        shell: pwsh
+        run: |
+          $stage = "dist\ApexTweaker"
+          New-Item -ItemType Directory -Path "$stage\src\Core", "$stage\src\UI" -Force | Out-Null
+          Copy-Item "PCTweaker.exe" "$stage\PCTweaker.exe" -Force
+          Copy-Item "build.bat" "$stage\build.bat" -Force
+          Copy-Item "app.manifest" "$stage\app.manifest" -Force
+          Copy-Item "README.md" "$stage\README.md" -Force
+          Copy-Item "LICENSE" "$stage\LICENSE" -Force
+          Copy-Item "SECURITY.md" "$stage\SECURITY.md" -Force
+          Copy-Item "CHANGELOG.md" "$stage\CHANGELOG.md" -Force
+          Copy-Item "src\Program.cs" "$stage\src\Program.cs" -Force
+          Copy-Item "src\Core\*.cs" "$stage\src\Core\" -Force
+          Copy-Item "src\UI\*.cs" "$stage\src\UI\" -Force
+
+          Compress-Archive -Path "$stage\*" -DestinationPath "ApexTweaker-Windows-x64.zip" -Force
+
+          $exeHash = (Get-FileHash "PCTweaker.exe" -Algorithm SHA256).Hash.ToLower()
+          $zipHash = (Get-FileHash "ApexTweaker-Windows-x64.zip" -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$exeHash  PCTweaker.exe"
+            "$zipHash  ApexTweaker-Windows-x64.zip"
+          ) | Set-Content -Path "SHA256SUMS.txt" -Encoding UTF8
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ApexTweaker-Windows-x64
+          path: |
+            PCTweaker.exe
+            ApexTweaker-Windows-x64.zip
+            SHA256SUMS.txt

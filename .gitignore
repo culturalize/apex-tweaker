@@ -1,0 +1,22 @@
+# Local build & release artifacts (published via GitHub Releases)
+PCTweaker.exe
+ApexTweaker.exe
+*.zip
+SHA256SUMS.txt
+RELEASE_NOTES.md
+dist/
+
+# Local diagnostic / test outputs
+latest-audit-report.txt
+self-test-results.txt
+*.log
+
+# IDE / OS files
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.pdb
+Thumbs.db
+.DS_Store
