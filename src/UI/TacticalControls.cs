@@ -14,6 +14,7 @@ namespace PCTweaker.UI
         Safe = 2,
         SolidSafe = 3,
         Warning = 4,
+        SolidWarning = 8,
         Danger = 5,
         Secondary = 6,
         Ghost = 7
@@ -66,7 +67,7 @@ namespace PCTweaker.UI
             Cursor = Cursors.Hand;
             Font = Theme.FontBodyBold;
             ButtonStyle = TacticalButtonStyle.Secondary;
-            CornerRadius = 6f;
+            CornerRadius = 8f;
             Size = new Size(140, 34);
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
@@ -91,12 +92,20 @@ namespace PCTweaker.UI
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-            Color bg, border, fg;
-            ResolveColors(out bg, out border, out fg);
+            Color bg, bgBottom, border, fg;
+            ResolveColors(out bg, out bgBottom, out border, out fg);
 
             RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            using (SolidBrush br = new SolidBrush(bg))
-                Theme.FillRoundedRect(g, br, rect, CornerRadius);
+            if (bg != bgBottom && rect.Width > 2 && rect.Height > 2)
+            {
+                using (LinearGradientBrush br = new LinearGradientBrush(rect, bg, bgBottom, 90f))
+                    Theme.FillRoundedRect(g, br, rect, CornerRadius);
+            }
+            else
+            {
+                using (SolidBrush br = new SolidBrush(bg))
+                    Theme.FillRoundedRect(g, br, rect, CornerRadius);
+            }
 
             if (border.A > 0)
             {
@@ -136,12 +145,13 @@ namespace PCTweaker.UI
             }
         }
 
-        private void ResolveColors(out Color bg, out Color border, out Color fg)
+        private void ResolveColors(out Color bgTop, out Color bgBottom, out Color border, out Color fg)
         {
             if (!Enabled)
             {
-                bg = Theme.Alpha(Theme.BgCardElevated, 140);
-                border = Theme.Alpha(Theme.BorderSubtle, 120);
+                bgTop = Theme.Alpha(Theme.BgCardElevated, 120);
+                bgBottom = bgTop;
+                border = Theme.Alpha(Theme.BorderSubtle, 100);
                 fg = Theme.TextMuted;
                 return;
             }
@@ -149,55 +159,74 @@ namespace PCTweaker.UI
             switch (ButtonStyle)
             {
                 case TacticalButtonStyle.SolidPrimary:
-                    bg = _pressed ? Theme.Blend(Theme.AccentPrimary, Color.Black, 0.25f)
-                       : (_hover ? Theme.Blend(Theme.AccentPrimary, Color.White, 0.12f) : Theme.AccentPrimary);
-                    border = bg;
-                    fg = Theme.BgCanvas;
+                    bgTop = _pressed ? Theme.AccentPrimaryDark
+                          : (_hover ? Theme.Blend(Theme.AccentPrimary, Color.White, 0.16f) : Theme.AccentPrimary);
+                    bgBottom = _pressed ? Theme.Blend(Theme.AccentPrimaryDark, Color.Black, 0.2f)
+                             : (_hover ? Theme.AccentPrimary : Theme.AccentPrimaryDark);
+                    border = Theme.Alpha(Color.White, 55);
+                    fg = Color.White;
                     break;
 
                 case TacticalButtonStyle.Primary:
-                    bg = _pressed ? Theme.Alpha(Theme.AccentPrimary, 55)
-                       : (_hover ? Theme.Alpha(Theme.AccentPrimary, 38) : Theme.Alpha(Theme.AccentPrimary, 22));
-                    border = _hover ? Theme.AccentPrimary : Theme.Alpha(Theme.AccentPrimary, 140);
+                    bgTop = _pressed ? Theme.Alpha(Theme.AccentPrimary, 55)
+                          : (_hover ? Theme.Alpha(Theme.AccentPrimary, 40) : Theme.Alpha(Theme.AccentPrimary, 24));
+                    bgBottom = bgTop;
+                    border = _hover ? Theme.AccentPrimary : Theme.Alpha(Theme.AccentPrimary, 145);
                     fg = Theme.AccentPrimary;
                     break;
 
                 case TacticalButtonStyle.SolidSafe:
-                    bg = _pressed ? Theme.Blend(Theme.AccentSafe, Color.Black, 0.2f)
-                       : (_hover ? Theme.Blend(Theme.AccentSafe, Color.White, 0.12f) : Theme.AccentSafe);
-                    border = bg;
-                    fg = Theme.BgCanvas;
+                    bgTop = _pressed ? Theme.AccentSafeDark
+                          : (_hover ? Theme.Blend(Theme.AccentSafe, Color.White, 0.15f) : Theme.AccentSafe);
+                    bgBottom = _pressed ? Theme.Blend(Theme.AccentSafeDark, Color.Black, 0.2f)
+                             : (_hover ? Theme.AccentSafe : Theme.AccentSafeDark);
+                    border = Theme.Alpha(Color.White, 55);
+                    fg = Color.White;
                     break;
 
                 case TacticalButtonStyle.Safe:
-                    bg = _pressed ? Theme.Alpha(Theme.AccentSafe, 55)
-                       : (_hover ? Theme.Alpha(Theme.AccentSafe, 38) : Theme.Alpha(Theme.AccentSafe, 22));
-                    border = _hover ? Theme.AccentSafe : Theme.Alpha(Theme.AccentSafe, 140);
+                    bgTop = _pressed ? Theme.Alpha(Theme.AccentSafe, 55)
+                          : (_hover ? Theme.Alpha(Theme.AccentSafe, 40) : Theme.Alpha(Theme.AccentSafe, 24));
+                    bgBottom = bgTop;
+                    border = _hover ? Theme.AccentSafe : Theme.Alpha(Theme.AccentSafe, 145);
                     fg = Theme.AccentSafe;
                     break;
 
+                case TacticalButtonStyle.SolidWarning:
+                    bgTop = _pressed ? Theme.AccentWarningDark
+                          : (_hover ? Theme.Blend(Theme.AccentWarning, Color.White, 0.18f) : Theme.AccentWarning);
+                    bgBottom = _pressed ? Theme.Blend(Theme.AccentWarningDark, Color.Black, 0.2f)
+                             : (_hover ? Theme.AccentWarning : Theme.AccentWarningDark);
+                    border = Theme.Alpha(Color.White, 65);
+                    fg = Theme.BgCanvas;
+                    break;
+
                 case TacticalButtonStyle.Warning:
-                    bg = _pressed ? Theme.Alpha(Theme.AccentWarning, 55)
-                       : (_hover ? Theme.Alpha(Theme.AccentWarning, 38) : Theme.Alpha(Theme.AccentWarning, 22));
-                    border = _hover ? Theme.AccentWarning : Theme.Alpha(Theme.AccentWarning, 140);
+                    bgTop = _pressed ? Theme.Alpha(Theme.AccentWarning, 55)
+                          : (_hover ? Theme.Alpha(Theme.AccentWarning, 40) : Theme.Alpha(Theme.AccentWarning, 24));
+                    bgBottom = bgTop;
+                    border = _hover ? Theme.AccentWarning : Theme.Alpha(Theme.AccentWarning, 150);
                     fg = Theme.AccentWarning;
                     break;
 
                 case TacticalButtonStyle.Danger:
-                    bg = _pressed ? Theme.Alpha(Theme.AccentDanger, 55)
-                       : (_hover ? Theme.Alpha(Theme.AccentDanger, 38) : Theme.Alpha(Theme.AccentDanger, 20));
+                    bgTop = _pressed ? Theme.Alpha(Theme.AccentDanger, 55)
+                          : (_hover ? Theme.Alpha(Theme.AccentDanger, 38) : Theme.Alpha(Theme.AccentDanger, 20));
+                    bgBottom = bgTop;
                     border = _hover ? Theme.AccentDanger : Theme.Alpha(Theme.AccentDanger, 130);
                     fg = Theme.AccentDanger;
                     break;
 
                 case TacticalButtonStyle.Ghost:
-                    bg = _pressed ? Theme.BgCardElevated : (_hover ? Theme.BgCardHover : Color.Transparent);
+                    bgTop = _pressed ? Theme.BgCardElevated : (_hover ? Theme.BgCardHover : Color.Transparent);
+                    bgBottom = bgTop;
                     border = _hover ? Theme.BorderSubtle : Color.Transparent;
                     fg = _hover ? Theme.TextPrimary : Theme.TextSecondary;
                     break;
 
                 default: // Secondary
-                    bg = _pressed ? Theme.BgCard : (_hover ? Theme.BgCardHover : Theme.BgCardElevated);
+                    bgTop = _pressed ? Theme.BgCard : (_hover ? Theme.BgCardElevated : Theme.BgCardTop);
+                    bgBottom = _pressed ? Theme.BgCard : (_hover ? Theme.BgCardHover : Theme.BgCard);
                     border = _hover ? Theme.BorderHover : Theme.BorderSubtle;
                     fg = _hover ? Theme.TextPrimary : Theme.TextSecondary;
                     break;
@@ -490,10 +519,7 @@ namespace PCTweaker.UI
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
             RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            using (SolidBrush bg = new SolidBrush(Theme.BgCard))
-                Theme.FillRoundedRect(g, bg, rect, 8f);
-            using (Pen border = new Pen(Theme.BorderSubtle, 1f))
-                Theme.DrawRoundedRect(g, border, rect, 8f);
+            Theme.DrawElevatedCard(g, rect, 10f, false, Color.Empty);
 
             // Top row: Title left, SubText right
             using (SolidBrush mb = new SolidBrush(Theme.TextMuted))
@@ -505,7 +531,7 @@ namespace PCTweaker.UI
                     g.DrawString(SubText, Theme.FontBadge, mb, new RectangleF(10, 7, Width - 20, 14), sfR);
             }
 
-            // Middle row: Monospace value
+            // Middle row: Clean value
             using (SolidBrush vb = new SolidBrush(Theme.TextPrimary))
             using (StringFormat sfV = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
             {
@@ -546,7 +572,7 @@ namespace PCTweaker.UI
             DoubleBuffered = true;
             ResizeRedraw = true;
             Size = new Size(168, 168);
-            Subtitle = "OPT SCORE";
+            Subtitle = "OPTIMIZED";
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
         }
@@ -596,7 +622,7 @@ namespace PCTweaker.UI
             using (SolidBrush sb = new SolidBrush(scoreColor))
             using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
             {
-                g.DrawString("OPT SCORE", Theme.FontBadge, sb, new RectangleF(0, Height * 0.56f, Width, 16), sf);
+                g.DrawString("OPTIMIZED", Theme.FontBadge, sb, new RectangleF(0, Height * 0.56f, Width, 16), sf);
             }
 
             if (!string.IsNullOrEmpty(Subtitle))
@@ -806,11 +832,7 @@ namespace PCTweaker.UI
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
             RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            using (SolidBrush bg = new SolidBrush(_hover ? Theme.BgCardHover : Theme.BgCard))
-                Theme.FillRoundedRect(g, bg, rect, 10f);
-
-            using (Pen border = new Pen(_hover ? Theme.Alpha(AccentColor, 130) : Theme.BorderSubtle, 1f))
-                Theme.DrawRoundedRect(g, border, rect, 10f);
+            Theme.DrawElevatedCard(g, rect, 12f, _hover, _hover ? Theme.Alpha(AccentColor, 145) : Color.Empty);
 
             // Top accent stripe
             using (SolidBrush stripe = new SolidBrush(AccentColor))
@@ -820,7 +842,7 @@ namespace PCTweaker.UI
             if (!string.IsNullOrEmpty(TierTag))
             {
                 Theme.DrawPillBadge(g, TierTag, Theme.FontBadge,
-                    Theme.Alpha(AccentColor, 24),
+                    Theme.Alpha(AccentColor, 26),
                     Theme.Alpha(AccentColor, 110),
                     AccentColor, 16f, 15f, 20f, 14);
             }
@@ -851,22 +873,25 @@ namespace PCTweaker.UI
     }
 
     // =========================================================================
-    // 10. EXPANDABLE SYSTEM TWEAK CARD (VIEW 2)
+    // 10. EXPANDABLE SYSTEM TWEAK CARD (VIEW 2) WITH DIRECT REBOOT BUTTON
     // =========================================================================
     public class TweakItemCard : Control
     {
-        public const int CollapsedHeight = 98;
-        public const int ExpandedHeight = 212;
+        public const int CollapsedHeight = 100;
+        public const int ExpandedHeight = 214;
 
         private bool _hover;
         private bool _isExpanded;
+        private bool _isPendingReboot;
         private RectangleF _detailsLinkRect;
         private readonly TacticalToggleSwitch _toggle;
+        private readonly TacticalButton _btnRebootCard;
 
         public TweakDefinition Tweak { get; private set; }
         public HardwareProfile Hardware { get; private set; }
 
         public event Action<TweakDefinition> ToggleRequested;
+        public event Action<TweakDefinition> RebootRequested;
         public event Action<TweakItemCard> ExpandChanged;
 
         public bool IsExpanded
@@ -878,6 +903,11 @@ namespace PCTweaker.UI
                 {
                     _isExpanded = value;
                     Height = _isExpanded ? ExpandedHeight : CollapsedHeight;
+                    if (Tweak.RequiresReboot && _btnRebootCard != null)
+                    {
+                        _btnRebootCard.Visible = _isPendingReboot || Tweak.CurrentStatus == TweakStatus.Applied || _isExpanded;
+                        PositionRebootButton();
+                    }
                     Invalidate();
                     if (ExpandChanged != null) ExpandChanged(this);
                 }
@@ -898,7 +928,7 @@ namespace PCTweaker.UI
             _toggle = new TacticalToggleSwitch
             {
                 Location = new Point(18, 22),
-                ActiveColor = Theme.AccentSafe
+                ActiveColor = Theme.AccentPrimary
             };
             _toggle.SetCheckedImmediate(tweak.CurrentStatus == TweakStatus.Applied);
             _toggle.UserToggled += (s, e) =>
@@ -906,12 +936,59 @@ namespace PCTweaker.UI
                 if (ToggleRequested != null) ToggleRequested(Tweak);
             };
             Controls.Add(_toggle);
+
+            _btnRebootCard = new TacticalButton
+            {
+                Text = "Restart to Apply",
+                IconKey = "restart",
+                Font = Theme.FontBadge,
+                ButtonStyle = TacticalButtonStyle.Warning,
+                CornerRadius = 6f,
+                Size = new Size(124, 24),
+                Visible = tweak.RequiresReboot && tweak.CurrentStatus == TweakStatus.Applied
+            };
+            _btnRebootCard.Click += (s, e) =>
+            {
+                if (RebootRequested != null) RebootRequested(Tweak);
+            };
+            Controls.Add(_btnRebootCard);
+            PositionRebootButton();
         }
 
-        public void SyncStateFromModel()
+        public void SyncStateFromModel(bool isPendingReboot = false)
         {
-            _toggle.SetCheckedImmediate(Tweak.CurrentStatus == TweakStatus.Applied);
+            _isPendingReboot = isPendingReboot;
+            bool isApplied = Tweak.CurrentStatus == TweakStatus.Applied;
+            _toggle.SetCheckedImmediate(isApplied);
+
+            if (Tweak.RequiresReboot)
+            {
+                bool showRebootBtn = isPendingReboot || isApplied || _isExpanded;
+                _btnRebootCard.Visible = showRebootBtn;
+                _btnRebootCard.Text = isPendingReboot ? "Restart Now" : "Restart to Apply";
+                _btnRebootCard.ButtonStyle = isPendingReboot
+                    ? TacticalButtonStyle.SolidWarning
+                    : TacticalButtonStyle.Warning;
+                PositionRebootButton();
+            }
+            else
+            {
+                _btnRebootCard.Visible = false;
+            }
+
             Invalidate();
+        }
+
+        private void PositionRebootButton()
+        {
+            if (_btnRebootCard == null) return;
+            _btnRebootCard.Location = new Point(Width - _btnRebootCard.Width - 14, 62);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            PositionRebootButton();
         }
 
         protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
@@ -949,72 +1026,73 @@ namespace PCTweaker.UI
             bool isRecommended = Tweak.IsRecommendedForTier(Hardware.DetectedTier);
 
             RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            Color cardBg = _hover ? Theme.BgCardHover : Theme.BgCard;
-            Color cardBorder = isApplied
-                ? Theme.Alpha(Theme.AccentSafe, _hover ? 150 : 95)
-                : (_hover ? Theme.BorderHover : Theme.BorderSubtle);
+            Color customBorder = _isPendingReboot
+                ? Theme.Alpha(Theme.AccentWarning, 165)
+                : (isApplied ? Theme.Alpha(Theme.AccentPrimary, _hover ? 160 : 100) : Color.Empty);
 
-            using (SolidBrush bg = new SolidBrush(cardBg))
-                Theme.FillRoundedRect(g, bg, rect, 9f);
-            using (Pen border = new Pen(cardBorder, 1f))
-                Theme.DrawRoundedRect(g, border, rect, 9f);
+            Theme.DrawElevatedCard(g, rect, 11f, _hover, customBorder);
 
             // Left status stripe
-            Color stripeCol = isApplied ? Theme.AccentSafe : Theme.BorderSubtle;
+            Color stripeCol = _isPendingReboot
+                ? Theme.AccentWarning
+                : (isApplied ? Theme.AccentPrimary : Theme.BorderSubtle);
             using (SolidBrush stripe = new SolidBrush(stripeCol))
-                Theme.FillRoundedRect(g, stripe, new RectangleF(1.5f, 14f, 3f, CollapsedHeight - 28f), 1.5f);
+                Theme.FillRoundedRect(g, stripe, new RectangleF(1.5f, 14f, 3.2f, CollapsedHeight - 28f), 1.6f);
 
             // Right-aligned badges flowing right-to-left on Row 1
             float badgeX = Width - 14f;
             float badgeY = 13f;
 
-            // Status Pill (APPLIED / DEFAULT)
-            string statusTxt = isApplied ? "APPLIED" : "DEFAULT";
+            // Status Pill (Enabled / Default)
+            string statusTxt = isApplied ? "Enabled" : "Off";
             Color stCol = isApplied ? Theme.AccentSafe : Theme.TextMuted;
             float stW = Theme.MeasurePillWidth(g, statusTxt, Theme.FontBadge, 14);
             badgeX -= stW;
             Theme.DrawPillBadge(g, statusTxt, Theme.FontBadge,
-                isApplied ? Theme.Alpha(Theme.AccentSafe, 30) : Theme.BgRecessed,
-                isApplied ? Theme.Alpha(Theme.AccentSafe, 130) : Theme.BorderSubtle,
+                isApplied ? Theme.Alpha(Theme.AccentSafe, 28) : Theme.BgRecessed,
+                isApplied ? Theme.Alpha(Theme.AccentSafe, 120) : Theme.BorderSubtle,
                 stCol, badgeX, badgeY, 19f, 14);
 
             // Risk Pill
-            string riskTxt = Tweak.RiskLevel.ToString().ToUpperInvariant();
+            string riskTxt = Tweak.RiskLevel == TweakRisk.Safe ? "Safe"
+                           : (Tweak.RiskLevel == TweakRisk.Moderate ? "Moderate" : "Advanced");
             Color riskCol = Tweak.RiskLevel == TweakRisk.Safe ? Theme.AccentSafe
                           : (Tweak.RiskLevel == TweakRisk.Moderate ? Theme.AccentWarning : Theme.AccentDanger);
             float rW = Theme.MeasurePillWidth(g, riskTxt, Theme.FontBadge, 12);
             badgeX -= (rW + 6f);
             Theme.DrawPillBadge(g, riskTxt, Theme.FontBadge,
-                Theme.Alpha(riskCol, 22), Theme.Alpha(riskCol, 100), riskCol, badgeX, badgeY, 19f, 12);
+                Theme.Alpha(riskCol, 22), Theme.Alpha(riskCol, 95), riskCol, badgeX, badgeY, 19f, 12);
 
             // Reboot pill if needed
             if (Tweak.RequiresReboot)
             {
-                float rbW = Theme.MeasurePillWidth(g, "REBOOT", Theme.FontBadge, 12);
+                string rbLabel = _isPendingReboot ? "Restart Pending" : "Needs Restart";
+                float rbW = Theme.MeasurePillWidth(g, rbLabel, Theme.FontBadge, 12);
                 badgeX -= (rbW + 6f);
-                Theme.DrawPillBadge(g, "REBOOT", Theme.FontBadge,
-                    Theme.Alpha(Theme.AccentWarning, 20), Theme.Alpha(Theme.AccentWarning, 95), Theme.AccentWarning,
+                Theme.DrawPillBadge(g, rbLabel, Theme.FontBadge,
+                    Theme.Alpha(Theme.AccentWarning, _isPendingReboot ? 38 : 20),
+                    Theme.Alpha(Theme.AccentWarning, _isPendingReboot ? 150 : 95),
+                    Theme.AccentWarning,
                     badgeX, badgeY, 19f, 12);
             }
 
             // Admin pill if requires admin & currently non-admin
-            if (Tweak.RequiresAdmin)
+            if (Tweak.RequiresAdmin && !Hardware.IsRunningAsAdmin)
             {
-                Color admCol = Hardware.IsRunningAsAdmin ? Theme.TextMuted : Theme.AccentWarning;
-                float aW = Theme.MeasurePillWidth(g, "ADMIN", Theme.FontBadge, 12);
+                float aW = Theme.MeasurePillWidth(g, "Admin Needed", Theme.FontBadge, 12);
                 badgeX -= (aW + 6f);
-                Theme.DrawPillBadge(g, "ADMIN", Theme.FontBadge,
-                    Theme.Alpha(admCol, 18), Theme.Alpha(admCol, 90), admCol,
+                Theme.DrawPillBadge(g, "Admin Needed", Theme.FontBadge,
+                    Theme.Alpha(Theme.AccentWarning, 20), Theme.Alpha(Theme.AccentWarning, 95), Theme.AccentWarning,
                     badgeX, badgeY, 19f, 12);
             }
 
             // Recommended star pill
             if (isRecommended)
             {
-                float recW = Theme.MeasurePillWidth(g, "★ REC", Theme.FontBadge, 12);
+                float recW = Theme.MeasurePillWidth(g, "★ Recommended", Theme.FontBadge, 12);
                 badgeX -= (recW + 6f);
-                Theme.DrawPillBadge(g, "★ REC", Theme.FontBadge,
-                    Theme.Alpha(Theme.AccentPrimary, 22), Theme.Alpha(Theme.AccentPrimary, 110), Theme.AccentPrimary,
+                Theme.DrawPillBadge(g, "★ Recommended", Theme.FontBadge,
+                    Theme.Alpha(Theme.AccentPrimary, 24), Theme.Alpha(Theme.AccentPrimary, 115), Theme.AccentPrimary,
                     badgeX, badgeY, 19f, 12);
             }
 
@@ -1033,18 +1111,22 @@ namespace PCTweaker.UI
                 g.DrawString(Tweak.ShortSummary, Theme.FontBody, sb, new RectangleF(contentX, 37f, Width - contentX - 16f, 20f), sfDesc);
             }
 
-            // Row 3: Impact Micro-Meters + Live Value + Technical Details Expander
+            // Row 3: Impact Micro-Meters + Live Value + Details Expander + Direct Reboot Button
             float row3Y = 66f;
             float mx = contentX;
             mx = DrawImpactMeter(g, "FPS", Tweak.ImpactFps, Theme.AccentPrimary, mx, row3Y);
-            mx = DrawImpactMeter(g, "LAT", Tweak.ImpactLatency, Theme.AccentSafe, mx + 12f, row3Y);
-            mx = DrawImpactMeter(g, "RAM", Tweak.ImpactRam, Theme.AccentWarning, mx + 12f, row3Y);
+            mx = DrawImpactMeter(g, "Latency", Tweak.ImpactLatency, Theme.AccentSafe, mx + 12f, row3Y);
+            mx = DrawImpactMeter(g, "Memory", Tweak.ImpactRam, Theme.AccentIndigo, mx + 12f, row3Y);
 
-            // Technical Details expander link (far right)
-            string detailsLabel = _isExpanded ? "Hide Details ▲" : "Technical Details ▼";
+            // Technical Details expander link (positioned left of _btnRebootCard if visible)
+            string detailsLabel = _isExpanded ? "Hide Details ▲" : "View Details ▼";
             SizeF dlSz = g.MeasureString(detailsLabel, Theme.FontSmallBold);
             float dlW = (float)Math.Ceiling(dlSz.Width) + 8f;
-            _detailsLinkRect = new RectangleF(Width - dlW - 14f, row3Y - 2f, dlW, 20f);
+            float rightAnchor = (_btnRebootCard != null && _btnRebootCard.Visible)
+                ? (_btnRebootCard.Left - 10f)
+                : (Width - 14f);
+
+            _detailsLinkRect = new RectangleF(rightAnchor - dlW, row3Y - 2f, dlW, 20f);
             using (SolidBrush lb = new SolidBrush(Theme.AccentPrimary))
             using (StringFormat sfR = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center })
             {
@@ -1059,7 +1141,7 @@ namespace PCTweaker.UI
                 using (SolidBrush lvBr = new SolidBrush(Theme.TextMuted))
                 using (StringFormat sfLv = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
                 {
-                    g.DrawString("Live: " + Tweak.LiveValueSummary, Theme.FontMonoSmall, lvBr, new RectangleF(liveX, row3Y - 1f, liveMaxW, 18f), sfLv);
+                    g.DrawString("State: " + Tweak.LiveValueSummary, Theme.FontSmall, lvBr, new RectangleF(liveX, row3Y - 1f, liveMaxW, 18f), sfLv);
                 }
             }
 
@@ -1068,25 +1150,25 @@ namespace PCTweaker.UI
             {
                 RectangleF drawer = new RectangleF(16f, CollapsedHeight + 2f, Width - 32f, ExpandedHeight - CollapsedHeight - 14f);
                 using (SolidBrush dbg = new SolidBrush(Theme.BgRecessed))
-                    Theme.FillRoundedRect(g, dbg, drawer, 6f);
+                    Theme.FillRoundedRect(g, dbg, drawer, 8f);
                 using (Pen dpen = new Pen(Theme.BorderSubtle, 1f))
-                    Theme.DrawRoundedRect(g, dpen, drawer, 6f);
+                    Theme.DrawRoundedRect(g, dpen, drawer, 8f);
 
-                float dx = drawer.X + 12f;
-                float dw = drawer.Width - 24f;
+                float dx = drawer.X + 14f;
+                float dw = drawer.Width - 28f;
                 using (SolidBrush lblBr = new SolidBrush(Theme.AccentPrimary))
                 using (SolidBrush bodyBr = new SolidBrush(Theme.TextPrimary))
                 using (SolidBrush monoBr = new SolidBrush(Theme.TextSecondary))
                 using (SolidBrush safeBr = new SolidBrush(Theme.AccentSafe))
                 using (StringFormat sfWrap = new StringFormat { Trimming = StringTrimming.EllipsisCharacter })
                 {
-                    g.DrawString("WHY IT HELPS GAMES:", Theme.FontBadge, lblBr, dx, drawer.Y + 9f);
-                    g.DrawString(Tweak.WhyItHelpsGaming, Theme.FontSmall, bodyBr, new RectangleF(dx + 126f, drawer.Y + 7f, dw - 126f, 28f), sfWrap);
+                    g.DrawString("How it helps:", Theme.FontSmallBold, lblBr, dx, drawer.Y + 8f);
+                    g.DrawString(Tweak.WhyItHelpsGaming, Theme.FontSmall, bodyBr, new RectangleF(dx + 112f, drawer.Y + 8f, dw - 112f, 28f), sfWrap);
 
-                    g.DrawString("TECHNICAL TARGET:", Theme.FontBadge, lblBr, dx, drawer.Y + 41f);
-                    g.DrawString(Tweak.TechnicalDetails, Theme.FontMonoSmall, monoBr, new RectangleF(dx + 126f, drawer.Y + 40f, dw - 126f, 30f), sfWrap);
+                    g.DrawString("System setting:", Theme.FontSmallBold, lblBr, dx, drawer.Y + 40f);
+                    g.DrawString(Tweak.TechnicalDetails, Theme.FontMono, monoBr, new RectangleF(dx + 112f, drawer.Y + 40f, dw - 112f, 30f), sfWrap);
 
-                    g.DrawString("✓ Anti-Cheat Safe (EAC / BattlEye / Vanguard / FACEIT AC)   •   Transactional SafetyVault Backup Enabled",
+                    g.DrawString("✓ Automatic backup saved in SkyGuard   •   Safe for all anti-cheat games",
                         Theme.FontBadge, safeBr, dx, drawer.Y + 75f);
                 }
             }
@@ -1094,10 +1176,11 @@ namespace PCTweaker.UI
 
         private float DrawImpactMeter(Graphics g, string label, int level, Color color, float x, float y)
         {
+            SizeF sz = g.MeasureString(label, Theme.FontBadge);
             using (SolidBrush lb = new SolidBrush(Theme.TextMuted))
                 g.DrawString(label, Theme.FontBadge, lb, x, y + 1f);
 
-            float px = x + 28f;
+            float px = x + (float)Math.Ceiling(sz.Width) + 4f;
             for (int i = 1; i <= 5; i++)
             {
                 Color pipCol = i <= level ? color : Theme.Alpha(Theme.BorderSubtle, 160);
@@ -1152,8 +1235,8 @@ namespace PCTweaker.UI
 
             BtnPotatoIni = new TacticalButton
             {
-                Text = "Potato Max-FPS .ini",
-                Size = new Size(138, 30),
+                Text = "Max-FPS Config (.ini)",
+                Size = new Size(146, 30),
                 Font = Theme.FontSmallBold,
                 ButtonStyle = TacticalButtonStyle.Warning
             };
@@ -1161,8 +1244,8 @@ namespace PCTweaker.UI
 
             BtnCompIni = new TacticalButton
             {
-                Text = "Competitive .ini",
-                Size = new Size(116, 30),
+                Text = "Competitive Config",
+                Size = new Size(132, 30),
                 Font = Theme.FontSmallBold,
                 ButtonStyle = TacticalButtonStyle.Primary
             };
@@ -1170,8 +1253,8 @@ namespace PCTweaker.UI
 
             BtnRestoreIni = new TacticalButton
             {
-                Text = "Restore .ini",
-                Size = new Size(96, 30),
+                Text = "Restore Backup",
+                Size = new Size(112, 30),
                 Font = Theme.FontSmallBold,
                 ButtonStyle = TacticalButtonStyle.Secondary
             };
@@ -1190,22 +1273,22 @@ namespace PCTweaker.UI
 
         public void SyncStateFromModel()
         {
-            BtnIfeo.Text = Game.IsIfeoHighPriorityEnabled ? "IFEO High Prio: ON" : "IFEO High Priority";
+            BtnIfeo.Text = Game.IsIfeoHighPriorityEnabled ? "High CPU Priority: ON" : "High CPU Priority";
             BtnIfeo.ButtonStyle = Game.IsIfeoHighPriorityEnabled ? TacticalButtonStyle.Safe : TacticalButtonStyle.Secondary;
 
             if (string.IsNullOrEmpty(Game.ExecutablePath))
             {
-                BtnGpuPref.Text = "Link .exe (GPU Pref)";
+                BtnGpuPref.Text = "Locate .exe (GPU)";
                 BtnGpuPref.ButtonStyle = TacticalButtonStyle.Secondary;
-                BtnFso.Text = "Disable FSO (Link .exe)";
+                BtnFso.Text = "Locate .exe (Fullscreen)";
                 BtnFso.ButtonStyle = TacticalButtonStyle.Secondary;
             }
             else
             {
-                BtnGpuPref.Text = Game.IsHighPerfGpuPreferred ? "High-Perf GPU: ON" : "Set High-Perf GPU";
+                BtnGpuPref.Text = Game.IsHighPerfGpuPreferred ? "High-Perf GPU: ON" : "Use High-Perf GPU";
                 BtnGpuPref.ButtonStyle = Game.IsHighPerfGpuPreferred ? TacticalButtonStyle.Safe : TacticalButtonStyle.Primary;
 
-                BtnFso.Text = Game.IsFullscreenOptDisabled ? "Exclusive FSO Off: ON" : "Disable Fullscreen Opt";
+                BtnFso.Text = Game.IsFullscreenOptDisabled ? "Fullscreen Opt: OFF" : "Disable Fullscreen Opt";
                 BtnFso.ButtonStyle = Game.IsFullscreenOptDisabled ? TacticalButtonStyle.Safe : TacticalButtonStyle.Secondary;
             }
 
@@ -1258,10 +1341,7 @@ namespace PCTweaker.UI
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
             RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            using (SolidBrush bg = new SolidBrush(_hover ? Theme.BgCardHover : Theme.BgCard))
-                Theme.FillRoundedRect(g, bg, rect, 9f);
-            using (Pen border = new Pen(_hover ? Theme.BorderHover : Theme.BorderSubtle, 1f))
-                Theme.DrawRoundedRect(g, border, rect, 9f);
+            Theme.DrawElevatedCard(g, rect, 11f, _hover, Color.Empty);
 
             // Right-aligned live badges flowing right-to-left
             float rx = Width - 16f;
@@ -1405,10 +1485,7 @@ namespace PCTweaker.UI
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
             RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            using (SolidBrush bg = new SolidBrush(_hover ? Theme.BgCardHover : Theme.BgCard))
-                Theme.FillRoundedRect(g, bg, rect, 8f);
-            using (Pen border = new Pen(_isBaseline ? Theme.Alpha(Theme.AccentSafe, 95) : Theme.BorderSubtle, 1f))
-                Theme.DrawRoundedRect(g, border, rect, 8f);
+            Theme.DrawElevatedCard(g, rect, 10f, _hover, _isBaseline ? Theme.Alpha(Theme.AccentSafe, 95) : Color.Empty);
 
             Theme.DrawVectorIcon(g, "vault", new RectangleF(14f, (Height - 20f) / 2f, 20f, 20f),
                 _isBaseline ? Theme.AccentSafe : Theme.AccentPrimary);

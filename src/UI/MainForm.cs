@@ -43,11 +43,17 @@ namespace PCTweaker.UI
         private TelemetryMetricCard _metricTimer;
         private TelemetryMetricCard _metricScore;
         private TacticalButton _btnQuickPurgeHeader;
+        private TacticalButton _btnRebootHeader;
 
         // Bottom Status Bar
         private Label _lblToastStatus;
         private Label _lblBottomApplied;
+        private TacticalButton _btnBottomReboot;
         private TacticalButton _btnBottomRevertAll;
+
+        // Cross-instance shutdown listener
+        private EventWaitHandle _shutdownEvent;
+        private volatile bool _isClosingInstance;
 
         // 6 View Containers
         private SmoothPanel _viewDashboard;
@@ -69,6 +75,8 @@ namespace PCTweaker.UI
 
         // View 2: Tweaks Explorer controls
         private SmoothPanel _tweaksHeaderPanel;
+        private SmoothPanel _tweaksRebootBanner;
+        private TacticalButton _btnBannerRebootNow;
         private SmoothPanel _tweaksFilterStrip;
         private readonly List<FilterPillButton> _filterPills = new List<FilterPillButton>();
         private DarkSearchBox _searchTweaksBox;
@@ -111,7 +119,7 @@ namespace PCTweaker.UI
         {
             _controller = controller;
 
-            Text = "Apex Tweaker — Gaming & Low-Spec Performance Suite";
+            Text = "SkyTweaks — Windows Gaming & Performance Optimizer";
             Size = new Size(1260, 830);
             MinimumSize = new Size(1060, 700);
             StartPosition = FormStartPosition.CenterScreen;
@@ -147,9 +155,44 @@ namespace PCTweaker.UI
             _telemetryTimer.Tick += (s, e) => UpdateTelemetryDisplay();
             _telemetryTimer.Start();
 
+            StartSingleInstanceShutdownListener();
+
             SwitchView(0);
             RefreshAllViews();
             UpdateTelemetryDisplay();
+        }
+
+        private void StartSingleInstanceShutdownListener()
+        {
+            try
+            {
+                _shutdownEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Program.ShutdownEventName);
+                Thread listener = new Thread(() =>
+                {
+                    try
+                    {
+                        while (!_isClosingInstance && _shutdownEvent != null)
+                        {
+                            if (_shutdownEvent.WaitOne(500))
+                            {
+                                if (!_isClosingInstance && !IsDisposed && IsHandleCreated)
+                                {
+                                    BeginInvoke((Action)(() =>
+                                    {
+                                        _isClosingInstance = true;
+                                        Close();
+                                    }));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                });
+                listener.IsBackground = true;
+                listener.Start();
+            }
+            catch { }
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -158,15 +201,62 @@ namespace PCTweaker.UI
             Theme.ApplyDarkTitleBar(Handle);
         }
 
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            LayoutTopBar();
+            LayoutBottomBar();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            LayoutTopBar();
+            LayoutBottomBar();
+        }
+
         protected override void Dispose(bool disposing)
         {
+            _isClosingInstance = true;
             if (disposing)
             {
                 if (_telemetryTimer != null) _telemetryTimer.Dispose();
+                if (_shutdownEvent != null)
+                {
+                    try { _shutdownEvent.Set(); _shutdownEvent.Dispose(); } catch { }
+                }
                 _controller.StatusMessageChanged -= OnControllerStatusChanged;
                 _controller.StateChanged -= OnControllerStateChanged;
             }
             base.Dispose(disposing);
+        }
+
+        private void PromptAndRestartComputer(string specificTweakTitle = null)
+        {
+            string targetSummary = !string.IsNullOrEmpty(specificTweakTitle)
+                ? specificTweakTitle
+                : _controller.GetPendingRebootSummary();
+
+            DialogResult dr = MessageBox.Show(this,
+                "A Windows restart is required to finish applying:\r\n\r\n" +
+                "  • " + targetSummary + "\r\n\r\n" +
+                "Restart your PC now?\r\n(Please save any open files first — Windows will restart in 5 seconds.)",
+                "SkyTweaks — Restart to Apply Settings",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (dr == DialogResult.Yes)
+            {
+                string msg;
+                if (_controller.ScheduleSystemRestart(5, out msg))
+                {
+                    Close();
+                }
+                else
+                {
+                    MessageBox.Show(this, msg, "Restart Notice", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
         }
 
         private void OnControllerStatusChanged(string msg)
@@ -237,11 +327,11 @@ namespace PCTweaker.UI
         // =========================================================================
         private void BuildShell()
         {
-            // 1. Left Navigation Rail (238px fixed)
+            // 1. Left Navigation Rail (252px fixed)
             _sidebar = new SmoothPanel
             {
                 Dock = DockStyle.Left,
-                Width = 238,
+                Width = 252,
                 BackColor = Theme.BgSidebar
             };
             _sidebar.Paint += (s, e) =>
@@ -269,12 +359,12 @@ namespace PCTweaker.UI
 
             string[,] navSpecs = new string[,]
             {
-                { "Dashboard & Boost", "dashboard" },
-                { "System Tweaks", "tweaks" },
-                { "Game Booster & RAM", "booster" },
-                { "Game Configs", "games" },
-                { "Safety Vault", "vault" },
-                { "Hardware & Audit", "audit" }
+                { "Home & Presets", "dashboard" },
+                { "Performance Tweaks", "tweaks" },
+                { "Memory & Game Boost", "booster" },
+                { "Installed Games", "games" },
+                { "Backups & Restore", "vault" },
+                { "System Info", "audit" }
             };
 
             for (int i = 0; i < navSpecs.GetLength(0); i++)
@@ -285,14 +375,14 @@ namespace PCTweaker.UI
                     Text = navSpecs[i, 0],
                     IconKey = navSpecs[i, 1],
                     Location = new Point(12, 8 + i * 48),
-                    Size = new Size(213, 42)
+                    Size = new Size(227, 42)
                 };
                 btn.Click += (s, e) => SwitchView(tabIdx);
                 _navButtons.Add(btn);
                 navListPanel.Controls.Add(btn);
             }
 
-            // Sidebar Bottom Footer (Anti-Cheat Safe + Admin Privilege Pill)
+            // Sidebar Bottom Footer (SkyGuard Protection + Admin Privilege Pill)
             _sidebarFooterPanel = new SmoothPanel
             {
                 Dock = DockStyle.Bottom,
@@ -310,7 +400,7 @@ namespace PCTweaker.UI
                     ButtonStyle = TacticalButtonStyle.Warning,
                     Font = Theme.FontSmallBold,
                     Location = new Point(14, 94),
-                    Size = new Size(209, 34)
+                    Size = new Size(223, 34)
                 };
                 _btnElevateSidebar.Click += (s, e) =>
                 {
@@ -345,39 +435,51 @@ namespace PCTweaker.UI
             };
             _topBar.Resize += (s, e) => LayoutTopBar();
 
-            _metricCpu = new TelemetryMetricCard { MetricTitle = "CPU LOAD", AccentColor = Theme.AccentPrimary };
-            _metricRam = new TelemetryMetricCard { MetricTitle = "PHYSICAL RAM", AccentColor = Theme.AccentSafe };
-            _metricTimer = new TelemetryMetricCard { MetricTitle = "KERNEL TIMER", AccentColor = Theme.AccentIndigo };
-            _metricScore = new TelemetryMetricCard { MetricTitle = "OPT SCORE", AccentColor = Theme.AccentWarning };
+            _metricCpu = new TelemetryMetricCard { MetricTitle = "PROCESSOR LOAD", AccentColor = Theme.AccentPrimary };
+            _metricRam = new TelemetryMetricCard { MetricTitle = "MEMORY USAGE", AccentColor = Theme.AccentSafe };
+            _metricTimer = new TelemetryMetricCard { MetricTitle = "SYSTEM TIMER", AccentColor = Theme.AccentIndigo };
+            _metricScore = new TelemetryMetricCard { MetricTitle = "OPTIMIZATION", AccentColor = Theme.AccentPrimary };
 
             _btnQuickPurgeHeader = new TacticalButton
             {
-                Text = "Quick Purge RAM",
+                Text = "Free Up RAM",
                 IconKey = "ram",
                 ButtonStyle = TacticalButtonStyle.Primary,
                 Font = Theme.FontSmallBold,
-                Size = new Size(152, 42)
+                Size = new Size(134, 42)
             };
             _btnQuickPurgeHeader.Click += (s, e) =>
             {
-                RunAsyncAction(_btnQuickPurgeHeader, "Purging working sets & standby memory...", () =>
+                RunAsyncAction(_btnQuickPurgeHeader, "Freeing cached standby memory...", () =>
                 {
                     MemoryPurgeResult res = _controller.PurgeMemory(true);
                     BeginInvoke((Action)(() => AppendBoostConsole(res.SummaryMessage)));
                 });
             };
 
+            _btnRebootHeader = new TacticalButton
+            {
+                Text = "Restart PC",
+                IconKey = "restart",
+                ButtonStyle = TacticalButtonStyle.SolidWarning,
+                Font = Theme.FontSmallBold,
+                Size = new Size(124, 42),
+                Visible = false
+            };
+            _btnRebootHeader.Click += (s, e) => PromptAndRestartComputer();
+
             _topBar.Controls.Add(_metricCpu);
             _topBar.Controls.Add(_metricRam);
             _topBar.Controls.Add(_metricTimer);
             _topBar.Controls.Add(_metricScore);
             _topBar.Controls.Add(_btnQuickPurgeHeader);
+            _topBar.Controls.Add(_btnRebootHeader);
 
-            // Persistent Bottom Status & Transaction Bar (38px)
+            // Persistent Bottom Status & Transaction Bar (40px)
             _bottomBar = new SmoothPanel
             {
                 Dock = DockStyle.Bottom,
-                Height = 38,
+                Height = 40,
                 BackColor = Theme.BgSidebar
             };
             _bottomBar.Paint += (s, e) =>
@@ -385,8 +487,9 @@ namespace PCTweaker.UI
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 using (Pen p = new Pen(Theme.BorderSubtle, 1f))
                     e.Graphics.DrawLine(p, 0, 0, _bottomBar.Width, 0);
-                using (SolidBrush dot = new SolidBrush(_isBusy ? Theme.AccentWarning : Theme.AccentSafe))
-                    e.Graphics.FillEllipse(dot, 16, 15, 8, 8);
+                Color dotCol = _isBusy || _controller.IsRebootPending ? Theme.AccentWarning : Theme.AccentSafe;
+                using (SolidBrush dot = new SolidBrush(dotCol))
+                    e.Graphics.FillEllipse(dot, 16, 16, 8, 8);
             };
             _bottomBar.Resize += (s, e) => LayoutBottomBar();
 
@@ -406,23 +509,36 @@ namespace PCTweaker.UI
                 AutoSize = false,
                 BackColor = Color.Transparent,
                 ForeColor = Theme.TextMuted,
-                Font = Theme.FontMonoSmall,
+                Font = Theme.FontSmall,
                 TextAlign = ContentAlignment.MiddleRight,
-                Text = "0/36 ACTIVE"
+                Text = "0/36 Enabled"
             };
+
+            _btnBottomReboot = new TacticalButton
+            {
+                Text = "Restart to Apply",
+                IconKey = "restart",
+                ButtonStyle = TacticalButtonStyle.Warning,
+                Font = Theme.FontBadge,
+                Size = new Size(124, 26),
+                CornerRadius = 6f,
+                Visible = false
+            };
+            _btnBottomReboot.Click += (s, e) => PromptAndRestartComputer();
 
             _btnBottomRevertAll = new TacticalButton
             {
-                Text = "Revert All",
+                Text = "Reset Defaults",
                 ButtonStyle = TacticalButtonStyle.Danger,
                 Font = Theme.FontBadge,
-                Size = new Size(88, 24),
-                CornerRadius = 5f
+                Size = new Size(100, 26),
+                CornerRadius = 6f
             };
             _btnBottomRevertAll.Click += (s, e) => ConfirmAndRevertAll(_btnBottomRevertAll);
 
             _bottomBar.Controls.Add(_lblToastStatus);
             _bottomBar.Controls.Add(_lblBottomApplied);
+            _bottomBar.Controls.Add(_btnBottomReboot);
             _bottomBar.Controls.Add(_btnBottomRevertAll);
 
             // Center Viewport Host
@@ -449,13 +565,23 @@ namespace PCTweaker.UI
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-            Theme.DrawVectorIcon(g, "logo", new RectangleF(16, 18, 34, 34), Theme.AccentPrimary);
+            Rectangle brandRect = _sidebarBrandPanel.ClientRectangle;
+            if (brandRect.Width > 0 && brandRect.Height > 0)
+            {
+                using (LinearGradientBrush topGlow = new LinearGradientBrush(
+                    brandRect, Theme.BgSidebarTop, Theme.BgSidebar, 90f))
+                {
+                    g.FillRectangle(topGlow, brandRect);
+                }
+            }
+
+            Theme.DrawVectorIcon(g, "logo", new RectangleF(16, 16, 36, 36), Theme.AccentPrimary);
 
             using (SolidBrush titleBr = new SolidBrush(Theme.TextPrimary))
             using (SolidBrush subBr = new SolidBrush(Theme.AccentPrimary))
             {
-                g.DrawString("APEX TWEAKER", Theme.FontBrand, titleBr, 58, 17);
-                g.DrawString("FPS & LATENCY ENGINE", Theme.FontBadge, subBr, 60, 39);
+                g.DrawString("SkyTweaks", Theme.FontBrand, titleBr, 58, 14);
+                g.DrawString("Gaming & PC Optimizer", Theme.FontBrandSub, subBr, 60, 38);
             }
 
             // Detected Hardware Tier Pill
@@ -464,22 +590,22 @@ namespace PCTweaker.UI
             switch (_controller.Hardware.DetectedTier)
             {
                 case SystemTier.PotatoLowSpec:
-                    tierShort = "TIER 1 • POTATO RESCUE";
+                    tierShort = "Profile: Low-Spec Boost";
                     tierColor = Theme.AccentWarning;
                     break;
                 case SystemTier.CompetitiveEsports:
-                    tierShort = "TIER 3 • COMPETITIVE RIG";
+                    tierShort = "Profile: Competitive Rig";
                     tierColor = Theme.AccentPrimary;
                     break;
                 default:
-                    tierShort = "TIER 2 • MID-RANGE GAMER";
+                    tierShort = "Profile: Balanced Gaming";
                     tierColor = Theme.AccentSafe;
                     break;
             }
 
             Theme.DrawPillBadge(g, tierShort, Theme.FontBadge,
-                Theme.Alpha(tierColor, 20), Theme.Alpha(tierColor, 100), tierColor,
-                16f, 68f, 22f, 16);
+                Theme.Alpha(tierColor, 24), Theme.Alpha(tierColor, 105), tierColor,
+                16f, 67f, 23f, 16);
 
             using (Pen div = new Pen(Theme.BorderSubtle, 1f))
                 g.DrawLine(div, 16, _sidebarBrandPanel.Height - 1, _sidebarBrandPanel.Width - 17, _sidebarBrandPanel.Height - 1);
@@ -494,53 +620,69 @@ namespace PCTweaker.UI
             using (Pen div = new Pen(Theme.BorderSubtle, 1f))
                 g.DrawLine(div, 16, 0, _sidebarFooterPanel.Width - 17, 0);
 
-            // Anti-Cheat Safe Badge Box
-            RectangleF acRect = new RectangleF(14, 12, 209, 44);
-            using (SolidBrush bg = new SolidBrush(Theme.Alpha(Theme.AccentSafe, 16)))
-                Theme.FillRoundedRect(g, bg, acRect, 7f);
-            using (Pen b = new Pen(Theme.Alpha(Theme.AccentSafe, 85), 1f))
-                Theme.DrawRoundedRect(g, b, acRect, 7f);
+            // SkyGuard Reassuring Protection Badge Box
+            RectangleF acRect = new RectangleF(14, 12, 223, 44);
+            using (SolidBrush bg = new SolidBrush(Theme.Alpha(Theme.AccentPrimary, 18)))
+                Theme.FillRoundedRect(g, bg, acRect, 8f);
+            using (Pen b = new Pen(Theme.Alpha(Theme.AccentPrimary, 80), 1f))
+                Theme.DrawRoundedRect(g, b, acRect, 8f);
 
-            Theme.DrawVectorIcon(g, "shield", new RectangleF(24, 24, 18, 18), Theme.AccentSafe);
-            using (SolidBrush safeBr = new SolidBrush(Theme.AccentSafe))
-            using (SolidBrush mutedBr = new SolidBrush(Theme.TextMuted))
+            Theme.DrawVectorIcon(g, "shield", new RectangleF(24, 24, 18, 18), Theme.AccentPrimary);
+            using (SolidBrush safeBr = new SolidBrush(Theme.TextPrimary))
+            using (SolidBrush mutedBr = new SolidBrush(Theme.TextSecondary))
             {
-                g.DrawString("100% ANTI-CHEAT SAFE", Theme.FontBadge, safeBr, 48, 18);
-                g.DrawString("EAC • BattlEye • Vanguard", Theme.FontSmall, mutedBr, 48, 32);
+                g.DrawString("SkyGuard Auto-Backup", Theme.FontSmallBold, safeBr, 48, 16);
+                g.DrawString("All changes are reversible", Theme.FontSmall, mutedBr, 48, 32);
             }
 
             // Admin Privilege Status Pill
             bool isAdmin = _controller.Hardware.IsRunningAsAdmin;
             Color admCol = isAdmin ? Theme.AccentSafe : Theme.AccentWarning;
-            string admTxt = isAdmin ? "● ADMIN PRIVILEGES ACTIVE" : "● STANDARD USER (LIMITED)";
+            string admTxt = isAdmin ? "● Administrator Mode" : "● Standard User Mode";
             using (SolidBrush br = new SolidBrush(admCol))
-                g.DrawString(admTxt, Theme.FontBadge, br, 16, 68);
+                g.DrawString(admTxt, Theme.FontSmallBold, br, 16, 66);
         }
 
         private void LayoutTopBar()
         {
             if (_topBar == null || _metricCpu == null) return;
             int pad = 16;
-            int btnW = 152;
+            int purgeW = 134;
+            int rebootW = (_btnRebootHeader != null && _btnRebootHeader.Visible) ? 132 : 0;
             int gap = 10;
-            int availW = _topBar.ClientSize.Width - pad * 2 - btnW - gap;
-            int cardW = Math.Max(130, (availW - gap * 3) / 4);
+            int rightBtnsW = purgeW + (rebootW > 0 ? rebootW + 8 : 0);
+            int availW = _topBar.ClientSize.Width - pad * 2 - rightBtnsW - gap;
+            int cardW = Math.Max(120, (availW - gap * 3) / 4);
             int y = 11;
 
             _metricCpu.SetBounds(pad, y, cardW, 58);
             _metricRam.SetBounds(pad + (cardW + gap) * 1, y, cardW, 58);
             _metricTimer.SetBounds(pad + (cardW + gap) * 2, y, cardW, 58);
             _metricScore.SetBounds(pad + (cardW + gap) * 3, y, cardW, 58);
-            _btnQuickPurgeHeader.SetBounds(_topBar.ClientSize.Width - pad - btnW, 19, btnW, 42);
+
+            int rx = _topBar.ClientSize.Width - pad - purgeW;
+            _btnQuickPurgeHeader.SetBounds(rx, 19, purgeW, 42);
+            if (_btnRebootHeader != null && _btnRebootHeader.Visible)
+            {
+                _btnRebootHeader.SetBounds(rx - rebootW - 8, 19, rebootW, 42);
+            }
         }
 
         private void LayoutBottomBar()
         {
             if (_bottomBar == null || _lblToastStatus == null) return;
             int w = _bottomBar.ClientSize.Width;
-            _btnBottomRevertAll.Location = new Point(w - 104, 7);
-            _lblBottomApplied.SetBounds(w - 282, 8, 168, 22);
-            _lblToastStatus.SetBounds(32, 8, Math.Max(120, w - 322), 22);
+            _btnBottomRevertAll.Location = new Point(w - _btnBottomRevertAll.Width - 14, 7);
+
+            int rightEdge = _btnBottomRevertAll.Left - 8;
+            if (_btnBottomReboot != null && _btnBottomReboot.Visible)
+            {
+                _btnBottomReboot.Location = new Point(rightEdge - _btnBottomReboot.Width, 7);
+                rightEdge = _btnBottomReboot.Left - 10;
+            }
+
+            _lblBottomApplied.SetBounds(rightEdge - 140, 9, 134, 22);
+            _lblToastStatus.SetBounds(32, 9, Math.Max(120, _lblBottomApplied.Left - 40), 22);
         }
 
         private void SwitchView(int index)
@@ -588,9 +730,9 @@ namespace PCTweaker.UI
             // 4 Preset Hero Cards
             _presetPotato = new PresetHeroCard
             {
-                TierTag = "TIER 1 • POTATO RESCUE",
-                Title = "Potato PC Rescue (Max FPS & VRAM Saver)",
-                Description = "Best for low-spec PCs, laptops & older GPUs. Disables DWM transparency & background bloat, consolidates svchost RAM overhead, and stabilizes 1% lows.",
+                TierTag = "LOW-SPEC & LAPTOP PROFILE",
+                Title = "Low-Spec PC & Laptop Boost (Max FPS)",
+                Description = "Ideal for older PCs, laptops & budget GPUs. Frees background memory, disables unnecessary desktop visual effects, and stabilizes frame pacing.",
                 AccentColor = Theme.AccentWarning
             };
             _presetPotato.ActionButton.ButtonStyle = TacticalButtonStyle.Warning;
@@ -598,19 +740,19 @@ namespace PCTweaker.UI
 
             _presetCompetitive = new PresetHeroCard
             {
-                TierTag = "TIER 3 • ESPORTS LOW-LATENCY",
-                Title = "Competitive FPS & Ultra-Low Latency",
-                Description = "Engineered for competitive shooters. Unparks CPU cores, sets Win32PrioritySeparation (0x26), optimizes MMCSS, disables Nagle & enforces 1:1 mouse aim.",
+                TierTag = "COMPETITIVE GAMING PROFILE",
+                Title = "Competitive FPS & Low Input Latency",
+                Description = "Built for high-refresh gaming. Unparks CPU cores, prioritizes foreground game responsiveness, reduces network packet delay & enables 1:1 mouse response.",
                 AccentColor = Theme.AccentPrimary
             };
-            _presetCompetitive.ActionButton.ButtonStyle = TacticalButtonStyle.Primary;
+            _presetCompetitive.ActionButton.ButtonStyle = TacticalButtonStyle.SolidPrimary;
             _presetCompetitive.ActionButton.Click += (s, e) => RunPresetAction(PresetProfile.CompetitiveFps, _presetCompetitive.ActionButton);
 
             _presetBalanced = new PresetHeroCard
             {
-                TierTag = "TIER 2 • ZERO-DOWNSIDE SAFE",
-                Title = "Balanced Daily Gaming (Safe Defaults)",
-                Description = "Applies every zero-downside Safe gaming optimization—GameDVR off, DX10/11 Flip Model, network unthrottling—while keeping Windows Search and visuals intact.",
+                TierTag = "EVERYDAY GAMING PROFILE",
+                Title = "Balanced Daily Gaming (Recommended Safe)",
+                Description = "Applies zero-downside gaming optimizations—disables background GameDVR capture, enables DirectX Flip Model, and unthrottles gaming network traffic.",
                 AccentColor = Theme.AccentSafe
             };
             _presetBalanced.ActionButton.ButtonStyle = TacticalButtonStyle.Safe;
@@ -618,16 +760,16 @@ namespace PCTweaker.UI
 
             _presetRevert = new PresetHeroCard
             {
-                TierTag = "SAFETY ROLLBACK",
-                Title = "Restore Windows Stock Baseline",
-                Description = "Instantly reverts all applied tweaks back to your exact pre-tweak values stored in SafetyVault (or clean Windows factory defaults).",
+                TierTag = "SKYGUARD RESTORE",
+                Title = "Restore Default Windows Settings",
+                Description = "Cleanly restores all modified settings back to your original pre-optimization values saved in SkyGuard.",
                 AccentColor = Theme.AccentDanger
             };
-            _presetRevert.ActionButton.Text = "Revert All Applied Tweaks";
+            _presetRevert.ActionButton.Text = "Restore All Defaults";
             _presetRevert.ActionButton.ButtonStyle = TacticalButtonStyle.Danger;
             _presetRevert.ActionButton.Click += (s, e) => ConfirmAndRevertAll(_presetRevert.ActionButton);
 
-            // Trust Banner
+            // Reassuring SkyGuard Banner
             _dashTrustBanner = new SmoothPanel
             {
                 BackColor = Color.Transparent,
@@ -641,16 +783,16 @@ namespace PCTweaker.UI
 
                 RectangleF r = new RectangleF(0.5f, 0.5f, _dashTrustBanner.Width - 1.5f, _dashTrustBanner.Height - 1.5f);
                 using (SolidBrush bg = new SolidBrush(Theme.BgRecessed))
-                    Theme.FillRoundedRect(g, bg, r, 8f);
-                using (Pen border = new Pen(Theme.Alpha(Theme.AccentSafe, 70), 1f))
-                    Theme.DrawRoundedRect(g, border, r, 8f);
+                    Theme.FillRoundedRect(g, bg, r, 10f);
+                using (Pen border = new Pen(Theme.Alpha(Theme.AccentPrimary, 75), 1f))
+                    Theme.DrawRoundedRect(g, border, r, 10f);
 
-                Theme.DrawVectorIcon(g, "shield", new RectangleF(14, 15, 20, 20), Theme.AccentSafe);
-                using (SolidBrush b1 = new SolidBrush(Theme.AccentSafe))
+                Theme.DrawVectorIcon(g, "shield", new RectangleF(16, 15, 20, 20), Theme.AccentPrimary);
+                using (SolidBrush b1 = new SolidBrush(Theme.TextPrimary))
                 using (SolidBrush b2 = new SolidBrush(Theme.TextSecondary))
                 {
-                    g.DrawString("Kernel Anti-Cheat & Transactional Safety Verified", Theme.FontSmallBold, b1, 44, 9);
-                    g.DrawString("Zero process injection, zero input hooks, zero DXGI overlay conflicts. Every tweak saves exact pre-tweak values to SafetyVault.", Theme.FontSmall, b2, 44, 27);
+                    g.DrawString("SkyGuard Automatic Backups & Game Compatibility", Theme.FontSmallBold, b1, 46, 9);
+                    g.DrawString("Every setting uses standard documented Windows configurations with automatic rollback snapshots—safe for all online games.", Theme.FontSmall, b2, 46, 27);
                 }
             };
 
@@ -672,10 +814,7 @@ namespace PCTweaker.UI
             int h = _dashHeroCard.Height;
             RectangleF rect = new RectangleF(0.5f, 0.5f, w - 1.5f, h - 1.5f);
 
-            using (SolidBrush bg = new SolidBrush(Theme.BgCard))
-                Theme.FillRoundedRect(g, bg, rect, 10f);
-            using (Pen border = new Pen(Theme.BorderSubtle, 1f))
-                Theme.DrawRoundedRect(g, border, rect, 10f);
+            Theme.DrawElevatedCard(g, rect, 12f, false, Color.Empty);
 
             // Subtle divider separating hardware specs from Radial Gauge
             float gaugeDivX = w - 208f;
@@ -688,35 +827,35 @@ namespace PCTweaker.UI
 
             // Top Row: Detected Tier Badge
             float tx = 18f;
-            float tierW = Theme.DrawPillBadge(g, hw.TierDisplayName.ToUpperInvariant(), Theme.FontBadge,
-                Theme.Alpha(tierColor, 24), Theme.Alpha(tierColor, 110), tierColor, tx, 14f, 21f, 16);
+            float tierW = Theme.DrawPillBadge(g, hw.TierDisplayName, Theme.FontBadge,
+                Theme.Alpha(tierColor, 26), Theme.Alpha(tierColor, 115), tierColor, tx, 14f, 22f, 16);
 
-            string chassisBadge = hw.IsLaptop ? "LAPTOP CHASSIS" : "DESKTOP CHASSIS";
+            string chassisBadge = hw.IsLaptop ? "Laptop System" : "Desktop System";
             Theme.DrawPillBadge(g, chassisBadge, Theme.FontBadge,
-                Theme.BgRecessed, Theme.BorderSubtle, Theme.TextSecondary, tx + tierW + 8f, 14f, 21f, 12);
+                Theme.BgRecessed, Theme.BorderSubtle, Theme.TextSecondary, tx + tierW + 8f, 14f, 22f, 12);
 
             // 2x2 Hardware Specs Matrix
             float leftAreaW = gaugeDivX - 36f;
             float colW = (leftAreaW - 14f) / 2f;
             DrawSpecTile(g, 18f, 46f, colW, "PROCESSOR", hw.CpuName,
                 string.Format("{0} Cores / {1} Threads  •  {2} MHz", hw.PhysicalCores, hw.LogicalThreads, hw.MaxClockMhz));
-            DrawSpecTile(g, 18f + colW + 14f, 46f, colW, "GRAPHICS ADAPTER", hw.GpuName,
-                string.Format("{0:N0} MB VRAM  •  HAGS: {1}  •  Drv {2}", hw.GpuVramMb, hw.IsHagsEnabled ? "ON" : "OFF", hw.GpuDriverVersion));
-            DrawSpecTile(g, 18f, 102f, colW, "MEMORY & STORAGE", string.Format("{0:F1} GB Physical RAM  •  {1}", hw.TotalRamMb / 1024.0, hw.PrimaryDiskType),
-                string.Format("{0:N0} MB Total System Memory", hw.TotalRamMb));
-            DrawSpecTile(g, 18f + colW + 14f, 102f, colW, "OPERATING SYSTEM", hw.OsCaption,
-                string.Format("Windows Build {0}  •  {1}", hw.OsBuild, hw.IsRunningAsAdmin ? "Elevated Admin" : "Standard User"));
+            DrawSpecTile(g, 18f + colW + 14f, 46f, colW, "GRAPHICS CARD", hw.GpuName,
+                string.Format("{0:N0} MB VRAM  •  HAGS: {1}  •  Driver {2}", hw.GpuVramMb, hw.IsHagsEnabled ? "On" : "Off", hw.GpuDriverVersion));
+            DrawSpecTile(g, 18f, 102f, colW, "MEMORY & STORAGE", string.Format("{0:F1} GB RAM  •  {1}", hw.TotalRamMb / 1024.0, hw.PrimaryDiskType),
+                string.Format("{0:N0} MB Total Physical Memory", hw.TotalRamMb));
+            DrawSpecTile(g, 18f + colW + 14f, 102f, colW, "WINDOWS VERSION", hw.OsCaption,
+                string.Format("Build {0}  •  {1}", hw.OsBuild, hw.IsRunningAsAdmin ? "Administrator" : "Standard User"));
 
             // Strategy Summary Callout Strip
             RectangleF stratRect = new RectangleF(18f, 156f, leftAreaW, 30f);
             using (SolidBrush sbg = new SolidBrush(Theme.BgRecessed))
-                Theme.FillRoundedRect(g, sbg, stratRect, 6f);
+                Theme.FillRoundedRect(g, sbg, stratRect, 7f);
             using (SolidBrush lbl = new SolidBrush(Theme.AccentPrimary))
             using (SolidBrush txt = new SolidBrush(Theme.TextSecondary))
             using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
             {
-                g.DrawString("STRATEGY:", Theme.FontBadge, lbl, new RectangleF(stratRect.X + 10, stratRect.Y, 68, stratRect.Height), sf);
-                g.DrawString(hw.TierRecommendationSummary, Theme.FontSmall, txt, new RectangleF(stratRect.X + 76, stratRect.Y, stratRect.Width - 84, stratRect.Height), sf);
+                g.DrawString("RECOMMENDED:", Theme.FontBadge, lbl, new RectangleF(stratRect.X + 10, stratRect.Y, 96, stratRect.Height), sf);
+                g.DrawString(hw.TierRecommendationSummary, Theme.FontSmall, txt, new RectangleF(stratRect.X + 106, stratRect.Y, stratRect.Width - 114, stratRect.Height), sf);
             }
         }
 
@@ -791,7 +930,7 @@ namespace PCTweaker.UI
         }
 
         // =========================================================================
-        // VIEW 2: SYSTEM TWEAKS EXPLORER (36 EXPANDABLE CARDS)
+        // VIEW 2: PERFORMANCE TWEAKS EXPLORER (36 EXPANDABLE CARDS + REBOOT BANNER)
         // =========================================================================
         private void BuildTweaksView()
         {
@@ -811,8 +950,8 @@ namespace PCTweaker.UI
                 using (SolidBrush tb = new SolidBrush(Theme.TextPrimary))
                 using (SolidBrush sb = new SolidBrush(Theme.TextSecondary))
                 {
-                    g.DrawString("System Tweaks Explorer", Theme.FontPageTitle, tb, 20, 10);
-                    g.DrawString("Toggle individual Windows, GPU, memory, network & input optimizations — click 'Technical Details' on any card to inspect exact keys.", Theme.FontSmall, sb, 20, 36);
+                    g.DrawString("Performance Tweaks", Theme.FontPageTitle, tb, 20, 10);
+                    g.DrawString("Customize CPU, graphics, memory, network & input settings — settings that need a restart show a 'Restart to Apply' button.", Theme.FontSmall, sb, 20, 36);
                 }
                 using (Pen div = new Pen(Theme.BorderSubtle, 1f))
                     g.DrawLine(div, 20, _tweaksHeaderPanel.Height - 1, _tweaksHeaderPanel.Width - 20, _tweaksHeaderPanel.Height - 1);
@@ -820,8 +959,8 @@ namespace PCTweaker.UI
 
             _btnApplyVisibleCategory = new TacticalButton
             {
-                Text = "Apply Visible",
-                ButtonStyle = TacticalButtonStyle.Primary,
+                Text = "Enable Shown",
+                ButtonStyle = TacticalButtonStyle.SolidPrimary,
                 Font = Theme.FontSmallBold,
                 Size = new Size(124, 32)
             };
@@ -829,15 +968,15 @@ namespace PCTweaker.UI
 
             _btnReauditTweaks = new TacticalButton
             {
-                Text = "Re-Audit",
+                Text = "Refresh",
                 IconKey = "refresh",
                 ButtonStyle = TacticalButtonStyle.Secondary,
                 Font = Theme.FontSmallBold,
-                Size = new Size(106, 32)
+                Size = new Size(102, 32)
             };
             _btnReauditTweaks.Click += (s, e) =>
             {
-                RunAsyncAction(_btnReauditTweaks, "Re-auditing live state of all 36 tweaks...", () =>
+                RunAsyncAction(_btnReauditTweaks, "Checking live status of all 36 optimizations...", () =>
                 {
                     _controller.AuditAllTweakStates();
                 });
@@ -858,9 +997,9 @@ namespace PCTweaker.UI
             AddFilterPill("Memory & Storage", (int)TweakCategory.MemoryAndStorage, false);
             AddFilterPill("Network & Ping", (int)TweakCategory.NetworkAndPing, false);
             AddFilterPill("Input & Mouse", (int)TweakCategory.InputAndMouse, false);
-            AddFilterPill("Bloat & Services", (int)TweakCategory.BloatAndServices, false);
+            AddFilterPill("Background Apps", (int)TweakCategory.BloatAndServices, false);
 
-            _searchTweaksBox = new DarkSearchBox("Search tweaks by name, symptom, or registry path...")
+            _searchTweaksBox = new DarkSearchBox("Search optimizations by name or description...")
             {
                 Location = new Point(20, 92),
                 Size = new Size(380, 32)
@@ -872,7 +1011,7 @@ namespace PCTweaker.UI
                 AutoSize = false,
                 BackColor = Color.Transparent,
                 ForeColor = Theme.TextMuted,
-                Font = Theme.FontMonoSmall,
+                Font = Theme.FontSmall,
                 TextAlign = ContentAlignment.MiddleRight,
                 Height = 24
             };
@@ -882,6 +1021,49 @@ namespace PCTweaker.UI
             _tweaksHeaderPanel.Controls.Add(_tweaksFilterStrip);
             _tweaksHeaderPanel.Controls.Add(_searchTweaksBox);
             _tweaksHeaderPanel.Controls.Add(_lblTweaksCountSummary);
+
+            // Interactive Reboot Needed Callout Banner (appears whenever a reboot-needed tweak is chosen)
+            _tweaksRebootBanner = new SmoothPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 52,
+                BackColor = Theme.BgCanvas,
+                Visible = false
+            };
+            _tweaksRebootBanner.Paint += (s, e) =>
+            {
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+
+                RectangleF box = new RectangleF(20f, 6f, _tweaksRebootBanner.Width - 40f, 42f);
+                using (SolidBrush bg = new SolidBrush(Theme.Alpha(Theme.AccentWarning, 24)))
+                    Theme.FillRoundedRect(g, bg, box, 9f);
+                using (Pen border = new Pen(Theme.Alpha(Theme.AccentWarning, 145), 1f))
+                    Theme.DrawRoundedRect(g, border, box, 9f);
+
+                Theme.DrawVectorIcon(g, "restart", new RectangleF(34f, 18f, 18f, 18f), Theme.AccentWarning);
+
+                string summary = "Restart required to finish applying: " + _controller.GetPendingRebootSummary();
+                float maxTextW = Math.Max(180f, (_btnBannerRebootNow != null ? _btnBannerRebootNow.Left : _tweaksRebootBanner.Width - 180) - 68f);
+                using (SolidBrush tb = new SolidBrush(Theme.TextPrimary))
+                using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
+                {
+                    g.DrawString(summary, Theme.FontBodyBold, tb, new RectangleF(60f, 6f, maxTextW, 42f), sf);
+                }
+            };
+
+            _btnBannerRebootNow = new TacticalButton
+            {
+                Text = "Restart PC Now",
+                IconKey = "restart",
+                ButtonStyle = TacticalButtonStyle.SolidWarning,
+                Font = Theme.FontSmallBold,
+                Size = new Size(146, 30),
+                CornerRadius = 7f
+            };
+            _btnBannerRebootNow.Click += (s, e) => PromptAndRestartComputer();
+            _tweaksRebootBanner.Controls.Add(_btnBannerRebootNow);
 
             // Scrollable Cards Panel
             _tweaksScrollPanel = new SmoothPanel
@@ -897,12 +1079,14 @@ namespace PCTweaker.UI
             {
                 TweakItemCard card = new TweakItemCard(tweak, _controller.Hardware);
                 card.ToggleRequested += OnTweakCardToggleRequested;
+                card.RebootRequested += (tw) => PromptAndRestartComputer(tw != null ? tw.Title : null);
                 card.ExpandChanged += (c) => ReflowTweakCardsLayout();
                 _tweakCards.Add(card);
                 _tweaksScrollPanel.Controls.Add(card);
             }
 
             _viewTweaks.Controls.Add(_tweaksScrollPanel);
+            _viewTweaks.Controls.Add(_tweaksRebootBanner);
             _viewTweaks.Controls.Add(_tweaksHeaderPanel);
         }
 
@@ -928,11 +1112,16 @@ namespace PCTweaker.UI
 
         private void OnTweakCardToggleRequested(TweakDefinition tweak)
         {
+            if (tweak.RequiresReboot)
+            {
+                _controller.MarkTweakPendingReboot(tweak);
+            }
+
             if (tweak.RequiresAdmin && !_controller.Hardware.IsRunningAsAdmin)
             {
                 DialogResult dr = MessageBox.Show(this,
-                    "'" + tweak.Title + "' modifies machine-level Windows settings (HKLM / Services / BCD) and requires Administrator privileges.\r\n\r\nRelaunch Apex Tweaker as Administrator now?",
-                    "Administrator Privileges Required",
+                    "'" + tweak.Title + "' modifies system-wide Windows settings and requires Administrator permissions.\r\n\r\nRelaunch SkyTweaks as Administrator now?",
+                    "Administrator Permissions Needed",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Information);
                 if (dr == DialogResult.Yes && _controller.RelaunchAsAdministrator())
@@ -943,7 +1132,7 @@ namespace PCTweaker.UI
             TweakOperationResult res = _controller.ToggleTweak(tweak.Id);
             if (!res.Success)
             {
-                MessageBox.Show(this, res.Message, "Tweak Notice", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, res.Message, "SkyTweaks Notice", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -957,13 +1146,13 @@ namespace PCTweaker.UI
             }
             if (targets.Count == 0)
             {
-                OnControllerStatusChanged("All tweaks in the current filter are already applied.");
+                OnControllerStatusChanged("All optimizations in the current filter are already enabled.");
                 return;
             }
 
-            RunAsyncAction(_btnApplyVisibleCategory, "Applying " + targets.Count + " tweaks in visible category...", () =>
+            RunAsyncAction(_btnApplyVisibleCategory, "Enabling " + targets.Count + " optimizations...", () =>
             {
-                _controller.CreateManualSnapshot("Auto-Snapshot Before Category Batch (" + targets.Count + " tweaks)");
+                _controller.CreateManualSnapshot("Auto-Backup Before Category Batch (" + targets.Count + " settings)");
                 int okCount = 0;
                 int adminSkip = 0;
                 foreach (TweakDefinition t in targets)
@@ -975,7 +1164,7 @@ namespace PCTweaker.UI
                     }
                     if (_controller.ApplyTweak(t.Id).Success) okCount++;
                 }
-                string msg = string.Format("Category batch complete: {0} applied{1}.",
+                string msg = string.Format("Batch complete: {0} enabled{1}.",
                     okCount, adminSkip > 0 ? (", " + adminSkip + " skipped — Admin needed") : "");
                 BeginInvoke((Action)(() => OnControllerStatusChanged(msg)));
             });
@@ -988,6 +1177,12 @@ namespace PCTweaker.UI
 
             _btnReauditTweaks.Location = new Point(w - 20 - _btnReauditTweaks.Width, 12);
             _btnApplyVisibleCategory.Location = new Point(_btnReauditTweaks.Left - 8 - _btnApplyVisibleCategory.Width, 12);
+
+            if (_tweaksRebootBanner != null && _btnBannerRebootNow != null)
+            {
+                _btnBannerRebootNow.Location = new Point(_tweaksRebootBanner.Width - 32 - _btnBannerRebootNow.Width, 12);
+                _tweaksRebootBanner.Invalidate();
+            }
 
             _tweaksFilterStrip.Width = Math.Max(400, w - 40);
             int px = 0;
@@ -1066,7 +1261,7 @@ namespace PCTweaker.UI
         }
 
         // =========================================================================
-        // VIEW 3: LIVE GAME BOOSTER & NATIVE RAM CLEANER
+        // VIEW 3: MEMORY & GAME SESSION BOOSTER
         // =========================================================================
         private void BuildBoosterView()
         {
@@ -1083,11 +1278,11 @@ namespace PCTweaker.UI
 
             _btnHeroBoostToggle = new TacticalButton
             {
-                Text = "ENGAGE GAME SESSION BOOST",
+                Text = "Start Gaming Session Boost",
                 IconKey = "booster",
                 Font = Theme.FontHeroButton,
                 ButtonStyle = TacticalButtonStyle.SolidPrimary,
-                CornerRadius = 8f,
+                CornerRadius = 9f,
                 Height = 52
             };
             _btnHeroBoostToggle.Click += (s, e) =>
@@ -1100,7 +1295,7 @@ namespace PCTweaker.UI
             };
             _boostLeftCard.Controls.Add(_btnHeroBoostToggle);
 
-            // Right Card: Native ntdll.dll Memory & Shader Cache Cleaner
+            // Right Card: Memory & Shader Cache Cleaner
             _boostRightCard = new SmoothPanel { BackColor = Color.Transparent };
             _boostRightCard.Paint += PaintBoostRightCard;
 
@@ -1108,14 +1303,14 @@ namespace PCTweaker.UI
 
             _btnPurgeStandby = new TacticalButton
             {
-                Text = "Purge Standby List & Background Working Sets (ntdll)",
+                Text = "Free Cached Standby Memory & Background RAM",
                 IconKey = "ram",
-                ButtonStyle = TacticalButtonStyle.Primary,
+                ButtonStyle = TacticalButtonStyle.SolidPrimary,
                 Height = 40
             };
             _btnPurgeStandby.Click += (s, e) =>
             {
-                RunAsyncAction(_btnPurgeStandby, "Executing native ntdll memory purge...", () =>
+                RunAsyncAction(_btnPurgeStandby, "Freeing standby cache & idle working sets...", () =>
                 {
                     MemoryPurgeResult res = _controller.PurgeMemory(true);
                     BeginInvoke((Action)(() => AppendBoostConsole(res.SummaryMessage)));
@@ -1124,7 +1319,7 @@ namespace PCTweaker.UI
 
             _btnCleanTemp = new TacticalButton
             {
-                Text = "Clean Windows & User Temp Folders",
+                Text = "Clean Temporary Windows Files",
                 ButtonStyle = TacticalButtonStyle.Secondary,
                 Height = 36
             };
@@ -1139,8 +1334,8 @@ namespace PCTweaker.UI
 
             _btnCleanShaders = new TacticalButton
             {
-                Text = "Clean Temp + DirectX / NVIDIA / AMD Shader Caches",
-                ButtonStyle = TacticalButtonStyle.Warning,
+                Text = "Refresh DirectX, NVIDIA & AMD Shader Caches",
+                ButtonStyle = TacticalButtonStyle.Secondary,
                 Height = 36
             };
             _btnCleanShaders.Click += (s, e) =>
@@ -1157,7 +1352,7 @@ namespace PCTweaker.UI
             _boostRightCard.Controls.Add(_btnCleanTemp);
             _boostRightCard.Controls.Add(_btnCleanShaders);
 
-            // Bottom Activity Console Card
+            // Bottom Activity Log Card
             _boostConsoleCard = new SmoothPanel { BackColor = Color.Transparent };
             _boostConsoleCard.Paint += (s, e) =>
             {
@@ -1165,12 +1360,9 @@ namespace PCTweaker.UI
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
                 RectangleF r = new RectangleF(0.5f, 0.5f, _boostConsoleCard.Width - 1.5f, _boostConsoleCard.Height - 1.5f);
-                using (SolidBrush bg = new SolidBrush(Theme.BgCard))
-                    Theme.FillRoundedRect(g, bg, r, 10f);
-                using (Pen border = new Pen(Theme.BorderSubtle, 1f))
-                    Theme.DrawRoundedRect(g, border, r, 10f);
+                Theme.DrawElevatedCard(g, r, 12f, false, Color.Empty);
                 using (SolidBrush lb = new SolidBrush(Theme.TextMuted))
-                    g.DrawString("BOOSTER & MEMORY ENGINE LOG", Theme.FontBadge, lb, 16, 12);
+                    g.DrawString("RECENT MEMORY & BOOST ACTIVITY", Theme.FontBadge, lb, 16, 12);
             };
 
             _txtBoostConsole = new TextBox
@@ -1180,9 +1372,9 @@ namespace PCTweaker.UI
                 BorderStyle = BorderStyle.None,
                 BackColor = Theme.BgRecessed,
                 ForeColor = Theme.TextSecondary,
-                Font = Theme.FontMonoSmall,
+                Font = Theme.FontSmall,
                 ScrollBars = ScrollBars.Vertical,
-                Text = "[" + DateTime.Now.ToString("HH:mm:ss") + "] Booster & Native ntdll.dll Memory Engine ready. Click 'Engage Game Session Boost' before launching a game.\r\n"
+                Text = "[" + DateTime.Now.ToString("HH:mm:ss") + "] SkyTweaks Memory & Game Booster ready. Click 'Start Gaming Session Boost' before launching a game.\r\n"
             };
             _txtBoostConsole.HandleCreated += (s, e) => Theme.ApplyDarkScrollbars(_txtBoostConsole.Handle);
             _boostConsoleCard.Controls.Add(_txtBoostConsole);
@@ -1202,27 +1394,23 @@ namespace PCTweaker.UI
             Color accent = active ? Theme.AccentSafe : Theme.AccentPrimary;
             RectangleF r = new RectangleF(0.5f, 0.5f, _boostLeftCard.Width - 1.5f, _boostLeftCard.Height - 1.5f);
 
-            using (SolidBrush bg = new SolidBrush(Theme.BgCard))
-                Theme.FillRoundedRect(g, bg, r, 10f);
-            using (Pen border = new Pen(active ? Theme.Alpha(Theme.AccentSafe, 140) : Theme.BorderSubtle, 1f))
-                Theme.DrawRoundedRect(g, border, r, 10f);
+            Theme.DrawElevatedCard(g, r, 12f, false, active ? Theme.Alpha(Theme.AccentSafe, 140) : Color.Empty);
 
             using (SolidBrush stripe = new SolidBrush(accent))
                 Theme.FillRoundedRect(g, stripe, new RectangleF(16, 1.5f, 64, 3f), 1.5f);
 
-            Theme.DrawPillBadge(g, active ? "● SESSION BOOST ACTIVE" : "● STANDBY — DESKTOP MODE", Theme.FontBadge,
-                Theme.Alpha(accent, 24), Theme.Alpha(accent, 110), accent, 18f, 16f, 20f, 14);
+            Theme.DrawPillBadge(g, active ? "● Gaming Boost Active" : "● Ready — Standard Desktop Mode", Theme.FontBadge,
+                Theme.Alpha(accent, 26), Theme.Alpha(accent, 110), accent, 18f, 16f, 20f, 14);
 
             using (SolidBrush tb = new SolidBrush(Theme.TextPrimary))
-                g.DrawString("Live Gaming Session Booster", Theme.FontSectionTitle, tb, 18f, 44f);
+                g.DrawString("Gaming Session Booster", Theme.FontSectionTitle, tb, 18f, 44f);
 
-            // Checklist items below hero button
             string[] steps = new string[]
             {
-                "Activate Ultimate / High Performance power plan (saves current GUID)",
-                "Close safe desktop bloat (OneDrive, Widgets, GameBar, Adobe helpers)",
-                "Pause background indexing & prefetcher daemons (WSearch, SysMain)",
-                "Purge Working Sets & Standby Page List — 100% Anti-Cheat Safe"
+                "Switches Windows power plan to High / Ultimate Performance",
+                "Pauses non-essential desktop apps (Widgets, OneDrive, GameBar)",
+                "Temporarily pauses background file indexing while you play",
+                "Frees standby memory & restores everything when you finish"
             };
 
             float cy = 148f;
@@ -1232,20 +1420,19 @@ namespace PCTweaker.UI
             {
                 foreach (string step in steps)
                 {
-                    g.DrawString(active ? "✓" : "▸", Theme.FontBodyBold, checkBr, 20f, cy);
+                    g.DrawString(active ? "✓" : "•", Theme.FontBodyBold, checkBr, 20f, cy);
                     g.DrawString(step, Theme.FontSmall, txtBr, new RectangleF(38f, cy + 1f, _boostLeftCard.Width - 54f, 18f), sf);
                     cy += 24f;
                 }
             }
 
-            // Session status recessed box
             RectangleF stBox = new RectangleF(18f, _boostLeftCard.Height - 70f, _boostLeftCard.Width - 36f, 52f);
             using (SolidBrush sbg = new SolidBrush(Theme.BgRecessed))
-                Theme.FillRoundedRect(g, sbg, stBox, 6f);
+                Theme.FillRoundedRect(g, sbg, stBox, 8f);
             using (SolidBrush sTxt = new SolidBrush(active ? Theme.AccentSafe : Theme.TextMuted))
             using (StringFormat sfWrap = new StringFormat { Trimming = StringTrimming.EllipsisWord })
             {
-                g.DrawString(_controller.Booster.SessionState.StatusSummary, Theme.FontMonoSmall, sTxt,
+                g.DrawString(_controller.Booster.SessionState.StatusSummary, Theme.FontSmall, sTxt,
                     new RectangleF(stBox.X + 10, stBox.Y + 8, stBox.Width - 20, stBox.Height - 16), sfWrap);
             }
         }
@@ -1257,22 +1444,19 @@ namespace PCTweaker.UI
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
             RectangleF r = new RectangleF(0.5f, 0.5f, _boostRightCard.Width - 1.5f, _boostRightCard.Height - 1.5f);
-            using (SolidBrush bg = new SolidBrush(Theme.BgCard))
-                Theme.FillRoundedRect(g, bg, r, 10f);
-            using (Pen border = new Pen(Theme.BorderSubtle, 1f))
-                Theme.DrawRoundedRect(g, border, r, 10f);
+            Theme.DrawElevatedCard(g, r, 12f, false, Color.Empty);
 
             using (SolidBrush stripe = new SolidBrush(Theme.AccentSafe))
                 Theme.FillRoundedRect(g, stripe, new RectangleF(16, 1.5f, 64, 3f), 1.5f);
 
-            Theme.DrawPillBadge(g, "NATIVE NTDLL.DLL + PSAPI", Theme.FontBadge,
-                Theme.Alpha(Theme.AccentSafe, 22), Theme.Alpha(Theme.AccentSafe, 100), Theme.AccentSafe, 18f, 16f, 20f, 14);
+            Theme.DrawPillBadge(g, "Smart RAM & Cache Cleaner", Theme.FontBadge,
+                Theme.Alpha(Theme.AccentSafe, 24), Theme.Alpha(Theme.AccentSafe, 105), Theme.AccentSafe, 18f, 16f, 20f, 14);
 
             using (SolidBrush tb = new SolidBrush(Theme.TextPrimary))
             using (SolidBrush sb = new SolidBrush(Theme.TextSecondary))
             {
-                g.DrawString("Standby Memory & Cache Purger", Theme.FontSectionTitle, tb, 18f, 44f);
-                g.DrawString("Reclaims cached Windows Standby List pages & trims background working sets to eliminate mid-game RAM allocation hitches.",
+                g.DrawString("System Memory & Shader Optimizer", Theme.FontSectionTitle, tb, 18f, 44f);
+                g.DrawString("Frees cached Windows standby pages and idle background memory to prevent stutters during memory-heavy games.",
                     Theme.FontSmall, sb, new RectangleF(18f, 162f, _boostRightCard.Width - 36f, 34f));
             }
         }
@@ -1328,8 +1512,8 @@ namespace PCTweaker.UI
                 using (SolidBrush tb = new SolidBrush(Theme.TextPrimary))
                 using (SolidBrush sb = new SolidBrush(Theme.TextSecondary))
                 {
-                    g.DrawString("Game Config & Engine Optimizer", Theme.FontPageTitle, tb, 20, 10);
-                    g.DrawString("Kernel-native IFEO High CPU/IO Priority (Anti-Cheat Safe), DirectX GPU Preference & Unreal Engine scalability presets with auto .bak backups.", Theme.FontSmall, sb, 20, 36);
+                    g.DrawString("Installed Games & Engine Profiles", Theme.FontPageTitle, tb, 20, 10);
+                    g.DrawString("Configure high CPU priority, dedicated GPU preference, and Unreal Engine graphics profiles with automatic backups.", Theme.FontSmall, sb, 20, 36);
                 }
                 using (Pen div = new Pen(Theme.BorderSubtle, 1f))
                     g.DrawLine(div, 20, _gamesHeaderPanel.Height - 1, _gamesHeaderPanel.Width - 20, _gamesHeaderPanel.Height - 1);
@@ -1586,8 +1770,8 @@ namespace PCTweaker.UI
                 using (SolidBrush tb = new SolidBrush(Theme.TextPrimary))
                 using (SolidBrush sb = new SolidBrush(Theme.TextSecondary))
                 {
-                    g.DrawString("Safety Vault & Rollback Center", Theme.FontPageTitle, tb, 20, 10);
-                    g.DrawString("Transactional JSON snapshots in %APPDATA%\\PCTweaker\\Snapshots, Windows System Restore & chronological audit log.", Theme.FontSmall, sb, 20, 36);
+                    g.DrawString("Backups & Restore (SkyGuard)", Theme.FontPageTitle, tb, 20, 10);
+                    g.DrawString("Automatic system snapshots in %APPDATA%\\SkyTweaks\\Snapshots, Windows System Restore points & change history.", Theme.FontSmall, sb, 20, 36);
                 }
                 using (Pen div = new Pen(Theme.BorderSubtle, 1f))
                     g.DrawLine(div, 20, _vaultHeaderPanel.Height - 1, _vaultHeaderPanel.Width - 20, _vaultHeaderPanel.Height - 1);
@@ -1665,7 +1849,7 @@ namespace PCTweaker.UI
             {
                 e.Graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
                 using (SolidBrush lb = new SolidBrush(Theme.TextMuted))
-                    e.Graphics.DrawString("SESSION TRANSACTIONAL AUDIT LOG (%APPDATA%\\PCTWEAKER\\AUDIT.LOG)", Theme.FontBadge, lb, 20, 6);
+                    e.Graphics.DrawString("RECENT CHANGE HISTORY (%APPDATA%\\SKYTWEAKS\\AUDIT.LOG)", Theme.FontBadge, lb, 20, 6);
             };
 
             _txtVaultAuditLog = new TextBox
@@ -1856,11 +2040,11 @@ namespace PCTweaker.UI
                 using (SaveFileDialog sfd = new SaveFileDialog())
                 {
                     sfd.Filter = "Text Report (*.txt)|*.txt";
-                    sfd.FileName = "apex-tweaker-audit-" + DateTime.Now.ToString("yyyyMMdd-HHmm") + ".txt";
+                    sfd.FileName = "skytweaks-report-" + DateTime.Now.ToString("yyyyMMdd-HHmm") + ".txt";
                     if (sfd.ShowDialog(this) == DialogResult.OK)
                     {
                         File.WriteAllText(sfd.FileName, _txtDiagnosticReport.Text, Encoding.UTF8);
-                        OnControllerStatusChanged("Saved diagnostic report to " + sfd.FileName);
+                        OnControllerStatusChanged("Saved system report to " + sfd.FileName);
                     }
                 }
             };
@@ -1932,24 +2116,24 @@ namespace PCTweaker.UI
                 if (t.IncludedInBalancedSafe && t.RiskLevel == TweakRisk.Safe) { balTotal++; if (on) balApplied++; }
             }
 
-            _presetPotato.ProgressBadge = string.Format("{0} / {1} ACTIVE", potApplied, potTotal);
-            _presetPotato.ActionButton.Text = string.Format("Apply Potato Rescue ({0} Tweaks)", potTotal);
+            _presetPotato.ProgressBadge = string.Format("{0} / {1} ENABLED", potApplied, potTotal);
+            _presetPotato.ActionButton.Text = string.Format("Apply Low-Spec Boost ({0} Settings)", potTotal);
             _presetPotato.Invalidate();
 
-            _presetCompetitive.ProgressBadge = string.Format("{0} / {1} ACTIVE", cmpApplied, cmpTotal);
-            _presetCompetitive.ActionButton.Text = string.Format("Apply Competitive Profile ({0} Tweaks)", cmpTotal);
+            _presetCompetitive.ProgressBadge = string.Format("{0} / {1} ENABLED", cmpApplied, cmpTotal);
+            _presetCompetitive.ActionButton.Text = string.Format("Apply Competitive Profile ({0} Settings)", cmpTotal);
             _presetCompetitive.Invalidate();
 
-            _presetBalanced.ProgressBadge = string.Format("{0} / {1} ACTIVE", balApplied, balTotal);
-            _presetBalanced.ActionButton.Text = string.Format("Apply Balanced Safe ({0} Tweaks)", balTotal);
+            _presetBalanced.ProgressBadge = string.Format("{0} / {1} ENABLED", balApplied, balTotal);
+            _presetBalanced.ActionButton.Text = string.Format("Apply Balanced Profile ({0} Settings)", balTotal);
             _presetBalanced.Invalidate();
 
-            _presetRevert.ProgressBadge = string.Format("{0} APPLIED", allApplied);
+            _presetRevert.ProgressBadge = string.Format("{0} ENABLED", allApplied);
             _presetRevert.Invalidate();
 
             // 2. Sync Sidebar Nav Badges
             _navButtons[1].BadgeText = allApplied + "/" + _controller.Tweaks.Count;
-            _navButtons[1].BadgeColor = allApplied > 0 ? Theme.AccentSafe : Theme.AccentPrimary;
+            _navButtons[1].BadgeColor = allApplied > 0 ? Theme.AccentPrimary : Theme.TextMuted;
 
             bool boostActive = _controller.Booster.SessionState.IsActive;
             _navButtons[2].BadgeText = boostActive ? "ON" : "";
@@ -1958,21 +2142,57 @@ namespace PCTweaker.UI
             _navButtons[3].BadgeText = _controller.DetectedGames.Count.ToString();
             _navButtons[4].BadgeText = _controller.GetSnapshots().Count.ToString();
 
-            // 3. Sync Bottom Bar
-            if (_lblBottomApplied != null)
-                _lblBottomApplied.Text = string.Format("{0} / {1} TWEAKS ACTIVE", allApplied, _controller.Tweaks.Count);
+            // 3. Sync Reboot Banner + Header/Bottom Reboot Buttons
+            bool rebootPending = _controller.IsRebootPending;
+            int appliedRebootCount = _controller.GetAppliedRebootTweaksCount();
 
-            // 4. Sync Tweak Cards
+            if (_tweaksRebootBanner != null)
+            {
+                if (_tweaksRebootBanner.Visible != rebootPending)
+                {
+                    _tweaksRebootBanner.Visible = rebootPending;
+                    LayoutTweaksView();
+                }
+                else
+                {
+                    _tweaksRebootBanner.Invalidate();
+                }
+            }
+
+            if (_btnRebootHeader != null)
+            {
+                if (_btnRebootHeader.Visible != rebootPending)
+                {
+                    _btnRebootHeader.Visible = rebootPending;
+                    LayoutTopBar();
+                }
+            }
+
+            if (_btnBottomReboot != null)
+            {
+                bool showBottomReboot = rebootPending || appliedRebootCount > 0;
+                _btnBottomReboot.Visible = showBottomReboot;
+                _btnBottomReboot.Text = rebootPending ? "Restart PC Now" : "Restart to Apply";
+                _btnBottomReboot.ButtonStyle = rebootPending ? TacticalButtonStyle.SolidWarning : TacticalButtonStyle.Warning;
+            }
+
+            if (_lblBottomApplied != null)
+                _lblBottomApplied.Text = string.Format("{0} / {1} Enabled", allApplied, _controller.Tweaks.Count);
+
+            LayoutBottomBar();
+            if (_bottomBar != null) _bottomBar.Invalidate();
+
+            // 4. Sync Tweak Cards (including individual per-card Restart Now button)
             foreach (TweakItemCard card in _tweakCards)
-                card.SyncStateFromModel();
+                card.SyncStateFromModel(_controller.IsTweakPendingReboot(card.Tweak.Id));
             FilterAndLayoutTweakCards();
 
             // 5. Sync Game Booster Hero Button
             if (_btnHeroBoostToggle != null)
             {
                 _btnHeroBoostToggle.Text = boostActive
-                    ? "GAME BOOST ACTIVE — RESTORE NORMAL MODE"
-                    : "ENGAGE GAME SESSION BOOST";
+                    ? "Gaming Boost Active — Restore Desktop Mode"
+                    : "Start Gaming Session Boost";
                 _btnHeroBoostToggle.ButtonStyle = boostActive
                     ? TacticalButtonStyle.SolidSafe
                     : TacticalButtonStyle.SolidPrimary;

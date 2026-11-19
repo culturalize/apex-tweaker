@@ -15,6 +15,8 @@ namespace PCTweaker.Core
         public GameBoosterEngine Booster { get; private set; }
         public SystemTelemetryEngine Telemetry { get; private set; }
         public string LastStatusMessage { get; private set; }
+        public HashSet<string> PendingRebootTweakIds { get; private set; }
+        public string LastRebootTweakTitle { get; private set; }
 
         public event Action<string> StatusMessageChanged;
         public event Action StateChanged;
@@ -27,10 +29,12 @@ namespace PCTweaker.Core
             Booster = new GameBoosterEngine();
             Telemetry = new SystemTelemetryEngine();
             DetectedGames = new List<DetectedGame>();
+            PendingRebootTweakIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            LastRebootTweakTitle = "";
 
             AuditAllTweakStates();
             RefreshDetectedGames();
-            SetStatus("System audited: " + Hardware.TierDisplayName + " (" + GetAppliedTweaksCount() + "/" + Tweaks.Count + " tweaks active).");
+            SetStatus("System ready: " + Hardware.TierDisplayName + " (" + GetAppliedTweaksCount() + " of " + Tweaks.Count + " optimizations enabled).");
         }
 
         private void SetStatus(string msg)
@@ -102,6 +106,11 @@ namespace PCTweaker.Core
             {
                 TweakOperationResult res = t.ApplyFunc(Hardware, Vault);
                 AuditSingleTweak(t);
+                if (res.Success && t.RequiresReboot)
+                {
+                    PendingRebootTweakIds.Add(t.Id);
+                    LastRebootTweakTitle = t.Title;
+                }
                 SetStatus(res.Message);
                 NotifyStateChanged();
                 return res;
@@ -131,6 +140,11 @@ namespace PCTweaker.Core
             {
                 TweakOperationResult res = t.RevertFunc(Hardware, Vault);
                 AuditSingleTweak(t);
+                if (res.Success && t.RequiresReboot)
+                {
+                    PendingRebootTweakIds.Add(t.Id);
+                    LastRebootTweakTitle = t.Title;
+                }
                 SetStatus(res.Message);
                 NotifyStateChanged();
                 return res;
@@ -189,7 +203,15 @@ namespace PCTweaker.Core
 
                 TweakOperationResult res = t.ApplyFunc(Hardware, Vault);
                 AuditSingleTweak(t);
-                if (res.Success) succeeded++;
+                if (res.Success)
+                {
+                    succeeded++;
+                    if (t.RequiresReboot)
+                    {
+                        PendingRebootTweakIds.Add(t.Id);
+                        LastRebootTweakTitle = t.Title;
+                    }
+                }
                 else failed++;
             }
 
@@ -221,7 +243,15 @@ namespace PCTweaker.Core
 
                 TweakOperationResult res = t.RevertFunc(Hardware, Vault);
                 AuditSingleTweak(t);
-                if (res.Success) reverted++;
+                if (res.Success)
+                {
+                    reverted++;
+                    if (t.RequiresReboot)
+                    {
+                        PendingRebootTweakIds.Add(t.Id);
+                        LastRebootTweakTitle = t.Title;
+                    }
+                }
             }
 
             string summary = string.Format(
@@ -457,10 +487,88 @@ namespace PCTweaker.Core
 
         public bool CreateSystemRestorePoint(out string message)
         {
-            bool ok = Vault.CreateWindowsSystemRestorePoint("PCTweaker Safety Restore Point", out message);
+            bool ok = Vault.CreateWindowsSystemRestorePoint("SkyTweaks Safety Restore Point", out message);
             SetStatus(message);
             NotifyStateChanged();
             return ok;
+        }
+
+        public bool IsRebootPending
+        {
+            get { return PendingRebootTweakIds != null && PendingRebootTweakIds.Count > 0; }
+        }
+
+        public bool IsTweakPendingReboot(string tweakId)
+        {
+            return PendingRebootTweakIds != null && !string.IsNullOrEmpty(tweakId) && PendingRebootTweakIds.Contains(tweakId);
+        }
+
+        public void MarkTweakPendingReboot(TweakDefinition tweak)
+        {
+            if (tweak == null || !tweak.RequiresReboot) return;
+            PendingRebootTweakIds.Add(tweak.Id);
+            LastRebootTweakTitle = tweak.Title;
+            NotifyStateChanged();
+        }
+
+        public int GetAppliedRebootTweaksCount()
+        {
+            int c = 0;
+            foreach (TweakDefinition t in Tweaks)
+            {
+                if (t.RequiresReboot && t.CurrentStatus == TweakStatus.Applied) c++;
+            }
+            return c;
+        }
+
+        public string GetPendingRebootSummary()
+        {
+            List<string> titles = new List<string>();
+            foreach (TweakDefinition t in Tweaks)
+            {
+                if (PendingRebootTweakIds.Contains(t.Id))
+                    titles.Add(t.Title);
+            }
+            if (titles.Count == 0)
+            {
+                foreach (TweakDefinition t in Tweaks)
+                {
+                    if (t.RequiresReboot && t.CurrentStatus == TweakStatus.Applied)
+                        titles.Add(t.Title);
+                }
+            }
+            if (titles.Count == 0) return "System optimization settings";
+            if (titles.Count <= 2) return string.Join(", ", titles.ToArray());
+            return titles[0] + ", " + titles[1] + " (+" + (titles.Count - 2) + " more)";
+        }
+
+        public bool ScheduleSystemRestart(int delaySeconds, out string message)
+        {
+            try
+            {
+                int sec = Math.Max(0, delaySeconds);
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "shutdown.exe",
+                    Arguments = string.Format("/r /t {0} /c \"SkyTweaks: Restarting Windows to apply performance optimizations.\"", sec),
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using (Process p = Process.Start(psi))
+                {
+                    if (p != null) p.WaitForExit(3000);
+                }
+                message = string.Format("Windows restart scheduled in {0} seconds.", sec);
+                Vault.AppendAuditLog(message);
+                SetStatus(message);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                message = "Could not initiate Windows restart: " + ex.Message;
+                SetStatus(message);
+                return false;
+            }
         }
 
         public TelemetrySample SampleTelemetry()
@@ -504,7 +612,7 @@ namespace PCTweaker.Core
             TelemetrySample tele = SampleTelemetry();
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("========================================================================");
-            sb.AppendLine("PCTWEAKER — HARDWARE, TELEMETRY & TWEAK AUDIT REPORT");
+            sb.AppendLine("SKYTWEAKS — SYSTEM HARDWARE, TELEMETRY & OPTIMIZATION REPORT");
             sb.AppendLine("========================================================================");
             sb.AppendLine("Generated At     : " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             sb.AppendLine("Admin Privileges : " + (Hardware.IsRunningAsAdmin ? "YES (Elevated)" : "NO (Standard User)"));

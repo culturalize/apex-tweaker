@@ -25,9 +25,8 @@ namespace PCTweaker.Core
 
         public BackupAndRollbackEngine()
         {
-            _vaultRootDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "PCTweaker");
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            _vaultRootDir = Path.Combine(appData, "SkyTweaks");
             _snapshotsDir = Path.Combine(_vaultRootDir, "Snapshots");
             _baselinePath = Path.Combine(_vaultRootDir, "baseline-state.json");
             _auditLogPath = Path.Combine(_vaultRootDir, "audit.log");
@@ -35,7 +34,35 @@ namespace PCTweaker.Core
             SessionAuditLog = new List<string>();
 
             EnsureDirectories();
+            MigrateLegacyVaultIfNeeded(Path.Combine(appData, "PCTweaker"));
             LoadOrInitializeBaseline();
+        }
+
+        private void MigrateLegacyVaultIfNeeded(string legacyDir)
+        {
+            try
+            {
+                if (!Directory.Exists(legacyDir)) return;
+                string legacyBaseline = Path.Combine(legacyDir, "baseline-state.json");
+                if (File.Exists(legacyBaseline) && !File.Exists(_baselinePath))
+                    File.Copy(legacyBaseline, _baselinePath, false);
+
+                string legacyAudit = Path.Combine(legacyDir, "audit.log");
+                if (File.Exists(legacyAudit) && !File.Exists(_auditLogPath))
+                    File.Copy(legacyAudit, _auditLogPath, false);
+
+                string legacySnaps = Path.Combine(legacyDir, "Snapshots");
+                if (Directory.Exists(legacySnaps))
+                {
+                    foreach (string file in Directory.GetFiles(legacySnaps, "*.json"))
+                    {
+                        string dest = Path.Combine(_snapshotsDir, Path.GetFileName(file));
+                        if (!File.Exists(dest))
+                            File.Copy(file, dest, false);
+                    }
+                }
+            }
+            catch { }
         }
 
         private void EnsureDirectories()
@@ -619,7 +646,7 @@ namespace PCTweaker.Core
                 using (ManagementClass srClass = new ManagementClass(scope, path, options))
                 using (ManagementBaseObject inParams = srClass.GetMethodParameters("CreateRestorePoint"))
                 {
-                    inParams["Description"] = string.IsNullOrWhiteSpace(description) ? "PCTweaker Safety Restore Point" : description;
+                    inParams["Description"] = string.IsNullOrWhiteSpace(description) ? "SkyTweaks Safety Restore Point" : description;
                     inParams["RestorePointType"] = 12; // MODIFY_SETTINGS
                     inParams["EventType"] = 100;       // BEGIN_SYSTEM_CHANGE
 

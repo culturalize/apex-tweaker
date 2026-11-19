@@ -1,10 +1,12 @@
-# Apex Tweaker — Gaming & Low-Spec PC Performance Suite
+# SkyTweaks — Windows Gaming & Performance Optimizer
 
-A lightweight, **zero-dependency**, **100% Anti-Cheat Safe** Windows 10/11 performance & frame-rate tweaker built for both low-spec ("Potato") PCs and competitive esports rigs.
+A clean, modern, **zero-dependency** Windows 10/11 gaming & performance optimizer designed for both low-spec PCs and high-refresh competitive gaming setups.
 
-- **Single standalone executable** (~150 KB, compiles natively with Windows' built-in `.NET Framework 4.8` C# compiler — no Electron, no Python, no external runtime installs).
-- **100% Reversible (`SafetyVault`)**: Captures your exact pre-tweak registry, service, and power-plan values before touching anything, with 1-click baseline rollback, point-in-time JSON snapshots, and Windows System Restore Point creation.
-- **100% Anti-Cheat Safe**: Compliant with **EasyAntiCheat (EAC)**, **BattlEye**, **Riot Vanguard**, **FACEIT AC**, and **Ricochet** — zero DLL injection, zero input hooks, zero fullscreen overlay hijacking, zero third-party kernel drivers.
+- **Single standalone executable** (`SkyTweaks.exe`, ~160 KB — compiles natively with Windows' built-in `.NET Framework 4.8` C# compiler; no Electron, no background bloat, no external runtime installs).
+- **SkyGuard Automatic Backups**: Saves your original pre-optimization registry, service, and power-plan values before changing anything, with 1-click baseline rollback, point-in-time JSON snapshots, and Windows System Restore Point creation.
+- **1-Click Restart to Apply**: Settings that require a Windows reboot automatically display a **Restart to Apply** button on the setting card, in the top header, and in the reboot notification banner.
+- **Automatic Single-Instance Cleanup**: Launching `SkyTweaks.exe` automatically closes any previously open instance (`SkyTweaks` or legacy `PCTweaker`).
+- **Safe for All Anti-Cheat Games**: Compatible with **EasyAntiCheat (EAC)**, **BattlEye**, **Riot Vanguard**, **FACEIT AC**, and **Ricochet** — zero DLL injection, zero input hooks, zero fullscreen overlay hijacking.
 
 ---
 
@@ -12,17 +14,17 @@ A lightweight, **zero-dependency**, **100% Anti-Cheat Safe** Windows 10/11 perfo
 
 ### Option 1 — Download Pre-Built Executable (Recommended)
 1. Go to the [**Latest GitHub Release**](https://github.com/culturalize/apex-tweaker/releases/latest).
-2. Download **`PCTweaker.exe`** (standalone app) or **`ApexTweaker-v1.0.0-Windows-x64.zip`** (full bundle + source + `build.bat`).
-3. Double-click **`PCTweaker.exe`** to launch.
-   - Standard user mode runs all `HKCU` user tweaks, game `.ini` optimizations, and working-set RAM purges.
-   - Click **Run as Administrator** in the bottom-left sidebar whenever you want to apply machine-level tweaks (`HKLM`, Services, `bcdedit`, IFEO priority, or Kernel Standby Page List purges).
+2. Download **`SkyTweaks.exe`** (standalone app) or **`SkyTweaks-v1.1.0-Windows-x64.zip`** (full bundle + source + `build.bat`).
+3. Double-click **`SkyTweaks.exe`** to launch.
+   - Standard user mode runs all `HKCU` user settings, game `.ini` profiles, and working-set RAM cleanup.
+   - Click **Run as Administrator** in the bottom-left sidebar whenever you want to apply system-wide settings (`HKLM`, Services, `bcdedit`, IFEO priority, or Standby Memory cleanup).
 
 ### Option 2 — Build From Source (2 Seconds, Zero Dependencies)
 ```bat
 git clone https://github.com/culturalize/apex-tweaker.git
 cd apex-tweaker
 .\build.bat
-.\PCTweaker.exe
+.\SkyTweaks.exe
 ```
 
 ---
@@ -56,17 +58,18 @@ Every tweak performs a **live real-time audit** against your PC so you see wheth
 - **Per-Game DirectX High-Performance GPU Preference** (`GpuPreference=2`) & **Fullscreen Optimizations Toggle** (`DISABLEDXMAXIMIZEDWINDOWEDMODE`).
 - **Unreal Engine `GameUserSettings.ini` Presets**: Apply **Potato Max-FPS** or **Competitive Clarity** scalability settings while automatically preserving a `.pctweaker.bak` backup for 1-click restoration.
 
-### 5. Safety Vault & Rollback Center
-- Saves your original pre-tweak baseline and named point-in-time JSON snapshots (including exact `TweakStates` of all 36 tweaks) under `%APPDATA%\PCTweaker\`.
-- 1-click **Create Windows System Restore Point**, **Save Manual Snapshot**, **Restore Snapshot**, **Delete Snapshot**, and **Revert All Tweaks to Baseline**.
+### 5. Backups & Restore (SkyGuard)
+- Saves your original pre-optimization baseline and named point-in-time JSON snapshots (including exact `TweakStates` of all 36 settings) under `%APPDATA%\SkyTweaks\` (and automatically migrates existing `%APPDATA%\PCTweaker\` snapshots).
+- 1-click **Create Windows Restore Point**, **Save Manual Snapshot**, **Restore Snapshot**, **Delete Snapshot**, and **Reset Defaults**.
 
 ---
 
 ## Command-Line Flags (Automation & Diagnostics)
-- `PCTweaker.exe` — Launches the desktop application.
-- `PCTweaker.exe --audit` — Runs a headless hardware, telemetry, and 36-tweak audit and writes `latest-audit-report.txt`.
-- `PCTweaker.exe --purge-ram` — Performs an immediate Working Set & Kernel Standby List RAM purge.
-- `PCTweaker.exe --self-test` — Verifies hardware profiling, 36-tweak live audit, SafetyVault transactional apply/revert, point-in-time snapshot replay, native RAM purging, 3-segment memory telemetry, and game discovery.
+- `SkyTweaks.exe` — Launches the desktop application (and automatically closes any older open instance).
+- `SkyTweaks.exe --close-running` — Cleanly closes any running `SkyTweaks` or `PCTweaker` instance.
+- `SkyTweaks.exe --audit` — Runs a headless hardware, telemetry, and 36-setting audit and writes `latest-audit-report.txt`.
+- `SkyTweaks.exe --purge-ram` — Performs an immediate Working Set & Standby List RAM cleanup.
+- `SkyTweaks.exe --self-test` — Verifies hardware profiling, 36-setting live audit, SkyGuard transactional apply/revert, point-in-time snapshot replay, native RAM cleanup, 3-segment memory telemetry, and game discovery.
 
 ---
 

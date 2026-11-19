@@ -1,7 +1,9 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 using PCTweaker.Core;
 using PCTweaker.UI;
@@ -10,6 +12,8 @@ namespace PCTweaker
 {
     internal static class Program
     {
+        public const string ShutdownEventName = @"Local\SkyTweaks_CloseInstance_Event";
+
         [DllImport("kernel32.dll")]
         private static extern bool AttachConsole(int dwProcessId);
 
@@ -18,6 +22,16 @@ namespace PCTweaker
         [STAThread]
         private static int Main(string[] args)
         {
+            if (args != null && args.Length > 0)
+            {
+                string firstArg = args[0].ToLowerInvariant();
+                if (firstArg == "--close-running")
+                {
+                    CloseExistingInstances();
+                    return 0;
+                }
+            }
+
             TweakerController controller = new TweakerController();
 
             if (args != null && args.Length > 0)
@@ -47,10 +61,64 @@ namespace PCTweaker
                 }
             }
 
+            // Close any previous open instances of SkyTweaks or PCTweaker before launching the UI
+            CloseExistingInstances();
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainForm(controller));
             return 0;
+        }
+
+        public static void CloseExistingInstances()
+        {
+            try
+            {
+                EventWaitHandle evt;
+                if (EventWaitHandle.TryOpenExisting(ShutdownEventName, out evt))
+                {
+                    using (evt)
+                    {
+                        evt.Set();
+                    }
+                    Thread.Sleep(180);
+                }
+            }
+            catch { }
+
+            int currentPid = Process.GetCurrentProcess().Id;
+            string[] targetNames = new string[] { "SkyTweaks", "PCTweaker", "ApexTweaker" };
+
+            foreach (string procName in targetNames)
+            {
+                try
+                {
+                    Process[] procs = Process.GetProcessesByName(procName);
+                    foreach (Process p in procs)
+                    {
+                        using (p)
+                        {
+                            if (p.Id == currentPid) continue;
+                            try
+                            {
+                                if (p.CloseMainWindow())
+                                {
+                                    if (p.WaitForExit(350)) continue;
+                                }
+                            }
+                            catch { }
+
+                            try
+                            {
+                                p.Kill();
+                                p.WaitForExit(350);
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch { }
+            }
         }
 
         private static int RunAutomatedSelfTest(TweakerController controller)
